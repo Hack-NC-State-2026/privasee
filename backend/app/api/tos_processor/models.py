@@ -166,6 +166,7 @@ SensitiveCategoryType = Literal[
     "sexual_orientation",
     "union_membership",
     "criminal",
+    "race_ethnicity",
 ]
 
 ChildrenDataType = Literal[
@@ -295,12 +296,12 @@ class LegalTermsSection(BaseModel):
 # ---------------------------
 
 class ScoreSection(BaseModel):
-    privacy_score: int = Field(..., description="Overall privacy score 0-100")
+    privacy_score: float = Field(..., description="Overall privacy score 0-100")
     posture: str = Field(..., description="One of: low_risk, moderate_risk, high_risk, unknown")
-    data_minimization: int = Field(..., description="Score 0-100")
-    retention_transparency: int = Field(..., description="Score 0-100")
-    third_party_exposure: int = Field(..., description="Score 0-100")
-    user_control: int = Field(..., description="Score 0-100")
+    data_minimization: float = Field(..., description="Score 0-100")
+    retention_transparency: float = Field(..., description="Score 0-100")
+    third_party_exposure: float = Field(..., description="Score 0-100")
+    user_control: float = Field(..., description="Score 0-100")
 
 
 # ---------------------------
