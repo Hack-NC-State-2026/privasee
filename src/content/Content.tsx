@@ -121,7 +121,7 @@ export default function Content(): JSX.Element {
       <button
         type='button'
         aria-label='Open extension side panel'
-        className='flex h-16 w-16 items-center justify-center rounded-full border-none bg-primary text-primary-content shadow-lg transition-shadow hover:shadow-xl'
+        className='flex h-16 w-16 items-center justify-center rounded-full border border-base-300 bg-white shadow-lg transition-shadow hover:shadow-xl'
         style={{
           position: 'fixed',
           left: `${getRightEdgeX()}px`,
