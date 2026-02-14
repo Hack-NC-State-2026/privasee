@@ -1,0 +1,169 @@
+{
+  "type": "object",
+  "properties": {
+    "document_metadata": {
+      "type": "object",
+      "properties": {
+        "company_name": { "type": "string" },
+        "policy_type": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "last_updated": { "type": "string" },
+        "jurisdiction": { "type": "string" }
+      }
+    },
+
+    "data_collection": {
+      "type": "object",
+      "properties": {
+        "personal_identifiers": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "ip_address": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "device_fingerprinting": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "user_content_collected": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "third_party_data_collection": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "broad_collection_language": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "phrases": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "data_usage": {
+      "type": "object",
+      "properties": {
+        "used_for_model_training": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "used_for_advertising": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "data_sold": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "anonymized_data_usage": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "clearly_defined": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "vague_usage_language": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "phrases": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "data_retention": {
+      "type": "object",
+      "properties": {
+        "retention_period_specified": { "type": "boolean" },
+        "retention_duration": { "type": "string" },
+        "indefinite_retention": { "type": "boolean" },
+        "deletion_rights_available": { "type": "boolean" },
+        "retention_vague_language": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "phrases": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "legal_terms": {
+      "type": "object",
+      "properties": {
+        "liability_cap": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "amount": { "type": "string" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "indemnification": {
+          "type": "object",
+          "properties": {
+            "present": { "type": "boolean" },
+            "evidence": { "type": "string" }
+          }
+        },
+        "mandatory_arbitration": { "type": "boolean" },
+        "class_action_waiver": { "type": "boolean" },
+        "termination_without_notice": { "type": "boolean" },
+        "perpetual_license_to_company": { "type": "boolean" }
+      }
+    },
+
+    "red_flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "clause": { "type": "string" },
+          "risk_reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

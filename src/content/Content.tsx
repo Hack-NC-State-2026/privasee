@@ -1,6 +1,8 @@
 import React, { JSX, useCallback, useEffect, useRef, useState } from 'react';
 import browser from 'webextension-polyfill';
 
+import { findPolicyLinks } from './policyLinks';
+
 const LOGO_PATH = 'src/assets/images/logo.png';
 
 const FLOATING_SIZE = 64;
@@ -113,6 +115,27 @@ export default function Content(): JSX.Element {
       window.removeEventListener('resize', handleResize);
       dragRef.current = null;
       didDragRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const listener = (
+      message: unknown,
+      _sender: unknown,
+      sendResponse: (response: { links: { url: string; text: string }[] }) => void
+    ): true => {
+      if (typeof message === 'object' && message !== null) {
+        const m = message as { type?: string };
+        if (m.type === 'GET_POLICY_LINKS') {
+          const links = findPolicyLinks(document);
+          sendResponse({ links });
+        }
+      }
+      return true;
+    };
+    browser.runtime.onMessage.addListener(listener);
+    return () => {
+      browser.runtime.onMessage.removeListener(listener);
     };
   }, []);
 

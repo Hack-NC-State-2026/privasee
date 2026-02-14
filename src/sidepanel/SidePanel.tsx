@@ -1,10 +1,144 @@
-import { JSX } from 'react';
+import { JSX, useCallback, useEffect, useState } from 'react';
+import browser from 'webextension-polyfill';
+
+const BACKEND_ORIGIN = 'http://localhost:8000';
+const HEALTH_ENDPOINTS = [`${BACKEND_ORIGIN}/api/health`, `${BACKEND_ORIGIN}/api/v1/health`];
+
+type HealthResponse = {
+  status: string;
+  environment: string;
+};
+
+type PolicyLink = { url: string; text: string };
 
 export default function SidePanel(): JSX.Element {
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [policyLinks, setPolicyLinks] = useState<PolicyLink[]>([]);
+  const [linksLoading, setLinksLoading] = useState(true);
+  const [linksError, setLinksError] = useState<string | null>(null);
+
+  const fetchHealth = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    let lastError: string | null = null;
+    for (const url of HEALTH_ENDPOINTS) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          lastError = `HTTP ${res.status}`;
+          continue;
+        }
+        const data = (await res.json()) as HealthResponse;
+        setHealth(data);
+        setLoading(false);
+        return;
+      } catch {
+        lastError = 'Network error';
+      }
+    }
+    setError(lastError ?? 'Failed to fetch health');
+    setHealth(null);
+    setLoading(false);
+  }, []);
+
+  const fetchPolicyLinks = useCallback(async () => {
+    setLinksLoading(true);
+    setLinksError(null);
+    try {
+      const [tab] = await browser.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+      if (!tab?.id) {
+        setLinksError('No active tab');
+        setPolicyLinks([]);
+        setLinksLoading(false);
+        return;
+      }
+      const response = (await browser.tabs.sendMessage(tab.id, {
+        type: 'GET_POLICY_LINKS',
+      })) as { links?: PolicyLink[] };
+      setPolicyLinks(response?.links ?? []);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Could not get links from page';
+      setLinksError(message);
+      setPolicyLinks([]);
+    } finally {
+      setLinksLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHealth();
+  }, [fetchHealth]);
+
+  useEffect(() => {
+    fetchPolicyLinks();
+  }, [fetchPolicyLinks]);
+
   return (
     <div id='my-ext' className='container p-4' data-theme='light'>
       <h1 className='text-xl font-bold'>Extension Side Panel</h1>
-      <p className='mt-2 text-sm'>This is the initial side panel page.</p>
+
+      <section className='mt-4'>
+        <h2 className='text-sm font-semibold text-base-content/80'>
+          Policy & terms links
+        </h2>
+        {linksLoading && (
+          <p className='mt-2 text-sm'>Loading…</p>
+        )}
+        {linksError && (
+          <p className='mt-2 text-sm text-error'>{linksError}</p>
+        )}
+        {!linksLoading && !linksError && (
+          <ul className='mt-2 list-inside list-disc space-y-1 text-sm'>
+            {policyLinks.length === 0 ? (
+              <li className='text-base-content/70'>No policy links found on this page.</li>
+            ) : (
+              policyLinks.map((link) => (
+                <li key={link.url}>
+                  <a
+                    href={link.url}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    className='link link-primary break-all'
+                  >
+                    {link.text || link.url}
+                  </a>
+                </li>
+              ))
+            )}
+          </ul>
+        )}
+      </section>
+
+      <section className='mt-4'>
+        <h2 className='text-sm font-semibold text-base-content/80'>
+          Backend health
+        </h2>
+        {loading && (
+          <p className='mt-2 text-sm'>Loading…</p>
+        )}
+        {error && (
+          <p className='mt-2 text-sm text-error'>{error}</p>
+        )}
+        {!loading && !error && health && (
+          <div className='mt-2 rounded-lg bg-base-200 p-3 text-sm'>
+            <p>
+              <span className='font-medium'>Status:</span>{' '}
+              <span className='badge badge-sm badge-success'>{health.status}</span>
+            </p>
+            <p className='mt-1'>
+              <span className='font-medium'>Environment:</span>{' '}
+              {health.environment}
+            </p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -28,6 +28,7 @@ export default defineManifest({
     128: 'src/assets/images/logo.png',
   },
   permissions: ['activeTab', 'storage'],
+  host_permissions: ['http://localhost:8000/*'],
   content_scripts: [
     {
       js: isDev
