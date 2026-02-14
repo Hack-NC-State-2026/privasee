@@ -1,4 +1,12 @@
-import { CSSProperties, JSX, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  CSSProperties,
+  JSX,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import browser from 'webextension-polyfill';
 
 import {
@@ -19,8 +27,12 @@ const postureIndicatorClass: Record<DataManagementLevel, string> = {
 };
 
 const BACKEND_ORIGIN = 'http://localhost:8000';
-const HEALTH_ENDPOINTS = [`${BACKEND_ORIGIN}/api/health`, `${BACKEND_ORIGIN}/api/v1/health`];
-const TOS_PROCESSOR_PROCESS_URL = `${BACKEND_ORIGIN}/api/tos_processor/process`;
+const HEALTH_ENDPOINTS = [
+  `${BACKEND_ORIGIN}/api/health`,
+  `${BACKEND_ORIGIN}/api/v1/health`,
+];
+
+const POLL_INTERVAL_MS = 2000;
 
 type HealthResponse = {
   status: string;
@@ -28,6 +40,13 @@ type HealthResponse = {
 };
 
 type PolicyLink = { url: string; text: string };
+
+type CachedAnalysis = {
+  links: PolicyLink[];
+  tosResult: Record<string, unknown> | null;
+  tosError: string | null;
+  tosLoading: boolean;
+};
 
 export default function SidePanel(): JSX.Element {
   const [theme, setTheme] = useState<DashboardTheme>(DEFAULT_DASHBOARD_THEME);
@@ -40,7 +59,11 @@ export default function SidePanel(): JSX.Element {
 
   const [tosLoading, setTosLoading] = useState(false);
   const [tosError, setTosError] = useState<string | null>(null);
-  const [tosResult, setTosResult] = useState<Record<string, unknown> | null>(null);
+  const [tosResult, setTosResult] = useState<Record<string, unknown> | null>(
+    null
+  );
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -103,11 +126,25 @@ export default function SidePanel(): JSX.Element {
     }
   }, []);
 
-  const fetchPolicyLinks = useCallback(async () => {
+  const applyCachedAnalysis = useCallback((cached: CachedAnalysis): boolean => {
+    setPolicyLinks(cached.links);
+    setTosResult(cached.tosResult);
+    setTosError(cached.tosError);
+    setTosLoading(cached.tosLoading);
+
+    const done = !cached.tosLoading;
+    if (done) {
+      setLinksLoading(false);
+    }
+    return done;
+  }, []);
+
+  const fetchCachedAnalysis = useCallback(async () => {
     setLinksLoading(true);
     setLinksError(null);
     setTosResult(null);
     setTosError(null);
+
     try {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) {
@@ -116,62 +153,58 @@ export default function SidePanel(): JSX.Element {
         setLinksLoading(false);
         return;
       }
+      const tabId = tab.id;
 
-      const response = (await browser.tabs.sendMessage(tab.id, {
-        type: 'GET_POLICY_LINKS',
-      })) as { links?: PolicyLink[] };
-      const links = response?.links ?? [];
-      setPolicyLinks(links);
+      const cached = (await browser.runtime.sendMessage({
+        type: 'GET_CACHED_ANALYSIS',
+        tabId,
+      })) as CachedAnalysis;
 
-      if (links.length > 0) {
-        const urls = links.map((l) => l.url);
-        const getUrl =
-          TOS_PROCESSOR_PROCESS_URL +
-          '?' +
-          urls.map((u) => `url=${encodeURIComponent(u)}`).join('&');
-        const callInfo = { method: 'GET' as const, url: getUrl, queryParams: urls };
-        console.log('TOS processor HTTP call', callInfo);
+      const done = applyCachedAnalysis(cached);
+      if (done) return;
 
-        setTosLoading(true);
+      /* Analysis still in progress — poll until finished */
+      setLinksLoading(false);
+      pollRef.current = setInterval(async () => {
         try {
-          const res = await fetch(getUrl);
-          if (!res.ok) {
-            const detail = (await res.json()).detail ?? res.statusText;
-            setTosError(typeof detail === 'string' ? detail : JSON.stringify(detail));
-            setTosResult(null);
-          } else {
-            const data = (await res.json()) as Record<string, unknown>;
-            setTosResult(data);
-            setTosError(null);
+          const updated = (await browser.runtime.sendMessage({
+            type: 'GET_CACHED_ANALYSIS',
+            tabId,
+          })) as CachedAnalysis;
+
+          const finished = applyCachedAnalysis(updated);
+          if (finished && pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
           }
-        } catch (err) {
-          const message =
-            err instanceof Error ? err.message : 'Failed to run policy analysis';
-          setTosError(message);
-          setTosResult(null);
-        } finally {
-          setTosLoading(false);
+        } catch {
+          /* ignore transient errors during poll */
         }
-      }
-    } catch (requestError) {
+      }, POLL_INTERVAL_MS);
+    } catch (err) {
       const message =
-        requestError instanceof Error
-          ? requestError.message
-          : 'Could not get links from page';
-      setPolicyLinks([]);
+        err instanceof Error
+          ? err.message
+          : 'Could not get analysis from background';
       setLinksError(message);
-    } finally {
+      setPolicyLinks([]);
       setLinksLoading(false);
     }
-  }, []);
+  }, [applyCachedAnalysis]);
 
   useEffect(() => {
     fetchHealth();
   }, [fetchHealth]);
 
   useEffect(() => {
-    fetchPolicyLinks();
-  }, [fetchPolicyLinks]);
+    fetchCachedAnalysis();
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [fetchCachedAnalysis]);
 
   const snapshot = useMemo(() => {
     const totalAccounts = dashboardProfiles.length;
@@ -313,7 +346,7 @@ export default function SidePanel(): JSX.Element {
             <h2 className='side-mini-label'>Policy & Terms On Current Site</h2>
             <button
               type='button'
-              onClick={fetchPolicyLinks}
+              onClick={fetchCachedAnalysis}
               className='rounded-md border border-slate-500/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-200'>
               Refresh
             </button>
