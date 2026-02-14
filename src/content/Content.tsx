@@ -1,7 +1,7 @@
 import React, { JSX, useCallback, useEffect, useRef, useState } from 'react';
 import browser from 'webextension-polyfill';
 
-import { findPolicyLinks } from './policyLinks';
+import { findPolicyLinks, type PolicyLink } from './policyLinks';
 
 const LOGO_PATH = 'src/assets/images/logo.png';
 
@@ -22,6 +22,7 @@ export default function Content(): JSX.Element {
   const [y, setY] = useState(DEFAULT_Y);
   const [isDragging, setIsDragging] = useState(false);
   const didDragRef = useRef(false);
+  const policyLinksRef = useRef<PolicyLink[]>([]);
   const dragRef = useRef<{
     startY: number;
     originY: number;
@@ -119,16 +120,37 @@ export default function Content(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    const runParsing = (): void => {
+      const links = findPolicyLinks(document);
+      policyLinksRef.current = links;
+      browser.runtime.sendMessage({ type: 'POLICY_LINKS_FOUND', links }).catch(() => {
+        /* background may not be ready yet; cached links still served via GET_POLICY_LINKS */
+      });
+    };
+
+    runParsing();
+    let cleanup: (() => void) | undefined;
+    if (document.readyState !== 'complete') {
+      const onLoad = (): void => {
+        runParsing();
+        window.removeEventListener('load', onLoad);
+      };
+      window.addEventListener('load', onLoad);
+      cleanup = () => window.removeEventListener('load', onLoad);
+    }
+    return () => cleanup?.();
+  }, []);
+
+  useEffect(() => {
     const listener = (
       message: unknown,
       _sender: unknown,
-      sendResponse: (response: { links: { url: string; text: string }[] }) => void
+      sendResponse: (response: { links: PolicyLink[] }) => void
     ): true => {
       if (typeof message === 'object' && message !== null) {
         const m = message as { type?: string };
         if (m.type === 'GET_POLICY_LINKS') {
-          const links = findPolicyLinks(document);
-          sendResponse({ links });
+          sendResponse({ links: policyLinksRef.current });
         }
       }
       return true;
