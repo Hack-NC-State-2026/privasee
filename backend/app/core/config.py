@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     environment: Literal["development", "staging", "production"] = "development"
     gemini_api_key: str | None = None
 
+    # Valkey (Redis-compatible)
+    valkey_host: str = "localhost"
+    valkey_port: int = 6379
+    valkey_password: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

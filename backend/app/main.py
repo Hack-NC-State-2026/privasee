@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.db import close as db_close, connect as db_connect
 
 logging.basicConfig(level=logging.INFO)
 
@@ -15,10 +16,11 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup and shutdown events."""
-    # Startup
-    yield
-    # Shutdown (e.g. close DB pools)
-    pass
+    db_connect()
+    try:
+        yield
+    finally:
+        db_close()
 
 
 def create_application() -> FastAPI:
