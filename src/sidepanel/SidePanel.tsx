@@ -63,27 +63,39 @@ export default function SidePanel(): JSX.Element {
   const fetchHealth = useCallback(async () => {
     setLoading(true);
     setError(null);
-    let lastError: string | null = null;
 
-    for (const url of HEALTH_ENDPOINTS) {
-      try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          lastError = `HTTP ${response.status}`;
-          continue;
-        }
-        const data = (await response.json()) as HealthResponse;
-        setHealth(data);
-        setLoading(false);
-        return;
-      } catch {
-        lastError = 'Network error';
+    const requestHealthFrom = async (
+      index: number,
+      lastMessage = 'Failed to fetch health'
+    ): Promise<HealthResponse> => {
+      if (index >= HEALTH_ENDPOINTS.length) {
+        throw new Error(lastMessage);
       }
-    }
 
-    setHealth(null);
-    setError(lastError ?? 'Failed to fetch health');
-    setLoading(false);
+      try {
+        const response = await fetch(HEALTH_ENDPOINTS[index]);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return (await response.json()) as HealthResponse;
+      } catch (requestError) {
+        const nextMessage =
+          requestError instanceof Error ? requestError.message : 'Network error';
+        return requestHealthFrom(index + 1, nextMessage);
+      }
+    };
+
+    try {
+      const data = await requestHealthFrom(0);
+      setHealth(data);
+      setLoading(false);
+    } catch (requestError) {
+      setHealth(null);
+      const message =
+        requestError instanceof Error ? requestError.message : 'Failed to fetch health';
+      setError(message);
+      setLoading(false);
+    }
   }, []);
 
   const fetchPolicyLinks = useCallback(async () => {
@@ -160,6 +172,13 @@ export default function SidePanel(): JSX.Element {
     );
   };
 
+  let backendStatusText = 'Live';
+  if (loading) {
+    backendStatusText = '...';
+  } else if (error) {
+    backendStatusText = 'Down';
+  }
+
   return (
     <div id='my-ext' className='urban-shell side-shell' data-theme={theme}>
       <div className='urban-bg' aria-hidden='true'>
@@ -207,9 +226,7 @@ export default function SidePanel(): JSX.Element {
           </article>
           <article className='side-mini-card'>
             <p className='side-mini-label'>Backend</p>
-            <p className='side-mini-value text-emerald-200'>
-              {loading ? '...' : error ? 'Down' : 'Live'}
-            </p>
+            <p className='side-mini-value text-emerald-200'>{backendStatusText}</p>
           </article>
         </section>
 
