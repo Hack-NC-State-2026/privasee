@@ -15,17 +15,17 @@ export default defineManifest({
   action: {
     default_popup: 'src/popup/index.html',
     default_icon: {
-      16: 'icon16.png',
-      32: 'icon32.png',
-      48: 'icon48.png',
-      128: 'icon128.png',
+      16: 'src/assets/images/logo.png',
+      32: 'src/assets/images/logo.png',
+      48: 'src/assets/images/logo.png',
+      128: 'src/assets/images/logo.png',
     },
   },
   icons: {
-    16: 'icon16.png',
-    32: 'icon32.png',
-    48: 'icon48.png',
-    128: 'icon128.png',
+    16: 'src/assets/images/logo.png',
+    32: 'src/assets/images/logo.png',
+    48: 'src/assets/images/logo.png',
+    128: 'src/assets/images/logo.png',
   },
   permissions: ['activeTab', 'storage'],
   content_scripts: [
@@ -38,7 +38,7 @@ export default defineManifest({
   ],
   web_accessible_resources: [
     {
-      resources: ['*.js', '*.css', 'public/*'],
+      resources: ['*.js', '*.css', 'public/*', 'src/assets/images/logo.png'],
       matches: ['<all_urls>'],
     },
   ],

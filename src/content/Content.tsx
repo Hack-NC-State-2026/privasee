@@ -1,6 +1,9 @@
 import React, { JSX, useCallback, useEffect, useRef, useState } from 'react';
+import browser from 'webextension-polyfill';
 
-const FLOATING_SIZE = 48;
+const LOGO_PATH = 'src/assets/images/logo.png';
+
+const FLOATING_SIZE = 64;
 const VIEWPORT_MARGIN = 16;
 const DEFAULT_X = window.innerWidth - FLOATING_SIZE - VIEWPORT_MARGIN;
 const DEFAULT_Y = 16;
@@ -132,7 +135,7 @@ export default function Content(): JSX.Element {
       <button
         type='button'
         aria-label='Open extension side panel'
-        className='flex h-12 w-12 items-center justify-center rounded-full border-none bg-primary text-primary-content shadow-lg transition-shadow hover:shadow-xl'
+        className='flex h-16 w-16 items-center justify-center rounded-full border-none bg-primary text-primary-content shadow-lg transition-shadow hover:shadow-xl'
         style={{
           position: 'fixed',
           left: `${position.x}px`,
@@ -151,14 +154,11 @@ export default function Content(): JSX.Element {
         onLostPointerCapture={handleLostPointerCapture}
         title='Click to open side panel'
       >
-        <svg
-          xmlns='http://www.w3.org/2000/svg'
-          viewBox='0 0 24 24'
-          fill='currentColor'
-          className='h-6 w-6'
-        >
-          <path d='M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z' />
-        </svg>
+        <img
+          src={browser.runtime.getURL(LOGO_PATH)}
+          alt='Extension'
+          className='h-10 w-10 object-contain'
+        />
       </button>
     </div>
   );
