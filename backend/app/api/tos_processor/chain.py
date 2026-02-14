@@ -53,11 +53,25 @@ def _extract_terms_and_privacy_risks(policy_texts: list[str]) -> dict:
         if parsed is not None:
             logger.info("Extraction result:\n%s", parsed.model_dump_json(indent=2))
             return parsed.model_dump()
+
+        # Log the parsing error so we can see why validation failed
+        parsing_error = response.get("parsing_error") if isinstance(response, dict) else None
         raw = response.get("raw") if isinstance(response, dict) else None
         logger.warning(
-            "LLM returned None on attempt %d/%d. Raw response: %s",
-            attempt, MAX_RETRIES, raw,
+            "LLM returned None on attempt %d/%d. Parsing error: %s",
+            attempt, MAX_RETRIES, parsing_error,
         )
+
+        # Fallback: try to manually parse from tool_calls in the raw response
+        if raw is not None and hasattr(raw, "tool_calls") and raw.tool_calls:
+            tool_call_args = raw.tool_calls[0].get("args") if isinstance(raw.tool_calls[0], dict) else None
+            if tool_call_args:
+                try:
+                    fallback = PolicyAnalysis.model_validate(tool_call_args)
+                    logger.info("Fallback parsing succeeded from tool_calls")
+                    return fallback.model_dump()
+                except Exception as e:
+                    logger.warning("Fallback parsing also failed: %s", e)
 
     raise RuntimeError("LLM failed to return structured output after %d attempts" % MAX_RETRIES)
 

@@ -58,7 +58,10 @@ async def _fetch_with_browser(url: str) -> str:
         try:
             page = await browser.new_page()
             await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-            await page.wait_for_load_state("networkidle", timeout=10_000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10_000)
+            except Exception:
+                logger.debug("networkidle timed out for %s, proceeding with current content", url)
             content = await page.content()
             return content
         finally:
