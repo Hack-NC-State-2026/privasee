@@ -7,6 +7,13 @@ import { createRoot } from 'react-dom/client';
  */
 export default function createShadowRoot(styles: string) {
   const host = document.createElement('div');
+  host.style.position = 'fixed';
+  host.style.top = '0';
+  host.style.left = '0';
+  host.style.width = '0';
+  host.style.height = '0';
+  host.style.overflow = 'visible';
+  host.style.zIndex = '2147483647';
   const shadow = host.attachShadow({ mode: 'open' });
 
   // Create an internal mount node to avoid Xray wrapper issues in Firefox

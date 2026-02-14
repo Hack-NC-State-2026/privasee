@@ -36,6 +36,10 @@ export function touchGlobalCSSPlugin({
 
 const chromeSpecificManifest = {
   options_page: 'src/options/index.html',
+  permissions: ['activeTab', 'storage', 'sidePanel'],
+  side_panel: {
+    default_path: 'src/sidepanel/index.html',
+  },
   background: {
     service_worker: 'src/background/index.ts',
     type: 'module',
