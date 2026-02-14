@@ -5,26 +5,23 @@ const LOGO_PATH = 'src/assets/images/logo.png';
 
 const FLOATING_SIZE = 64;
 const VIEWPORT_MARGIN = 16;
-const DEFAULT_X = window.innerWidth - FLOATING_SIZE - VIEWPORT_MARGIN;
 const DEFAULT_Y = 16;
 const DRAG_THRESHOLD = 12;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 
-const getMaxX = (): number =>
+const getRightEdgeX = (): number =>
   window.innerWidth - FLOATING_SIZE - VIEWPORT_MARGIN;
 const getMaxY = (): number =>
   window.innerHeight - FLOATING_SIZE - VIEWPORT_MARGIN;
 
 export default function Content(): JSX.Element {
-  const [position, setPosition] = useState({ x: DEFAULT_X, y: DEFAULT_Y });
+  const [y, setY] = useState(DEFAULT_Y);
   const [isDragging, setIsDragging] = useState(false);
   const didDragRef = useRef(false);
   const dragRef = useRef<{
-    startX: number;
     startY: number;
-    originX: number;
     originY: number;
     pointerId: number;
   } | null>(null);
@@ -55,19 +52,13 @@ export default function Content(): JSX.Element {
       const dragSession = dragRef.current;
       if (!dragSession || dragSession.pointerId !== e.pointerId) return;
 
-      const dx = e.clientX - dragSession.startX;
       const dy = e.clientY - dragSession.startY;
-      const overThreshold =
-        Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD;
-      if (overThreshold) {
+      if (Math.abs(dy) > DRAG_THRESHOLD) {
         didDragRef.current = true;
         setIsDragging(true);
       }
       if (didDragRef.current) {
-        setPosition({
-          x: clamp(dragSession.originX + dx, VIEWPORT_MARGIN, getMaxX()),
-          y: clamp(dragSession.originY + dy, VIEWPORT_MARGIN, getMaxY()),
-        });
+        setY(clamp(dragSession.originY + dy, VIEWPORT_MARGIN, getMaxY()));
       }
     },
     []
@@ -83,14 +74,12 @@ export default function Content(): JSX.Element {
       setIsDragging(false);
 
       dragRef.current = {
-        startX: e.clientX,
         startY: e.clientY,
-        originX: position.x,
-        originY: position.y,
+        originY: y,
         pointerId: e.pointerId,
       };
     },
-    [position]
+    [y]
   );
 
   const handlePointerUp = useCallback(
@@ -116,10 +105,7 @@ export default function Content(): JSX.Element {
 
   useEffect(() => {
     const handleResize = () => {
-      setPosition((current) => ({
-        x: clamp(current.x, VIEWPORT_MARGIN, getMaxX()),
-        y: clamp(current.y, VIEWPORT_MARGIN, getMaxY()),
-      }));
+      setY((current) => clamp(current, VIEWPORT_MARGIN, getMaxY()));
     };
 
     window.addEventListener('resize', handleResize);
@@ -138,8 +124,8 @@ export default function Content(): JSX.Element {
         className='flex h-16 w-16 items-center justify-center rounded-full border-none bg-primary text-primary-content shadow-lg transition-shadow hover:shadow-xl'
         style={{
           position: 'fixed',
-          left: `${position.x}px`,
-          top: `${position.y}px`,
+          left: `${getRightEdgeX()}px`,
+          top: `${y}px`,
           pointerEvents: 'auto',
           zIndex: 2147483647,
           cursor: isDragging ? 'grabbing' : 'pointer',
