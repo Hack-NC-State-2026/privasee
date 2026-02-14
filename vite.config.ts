@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable no-param-reassign */
 import fs from 'fs';
 import path, { resolve } from 'path';
 import { crx, ManifestV3Export } from '@crxjs/vite-plugin';

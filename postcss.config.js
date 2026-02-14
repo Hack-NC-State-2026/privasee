@@ -9,9 +9,15 @@ import tailwindcss from '@tailwindcss/postcss';
  * @param {string} prefix - The prefix to apply to the selector.
  * @param {string} selector - The original CSS selector.
  * @param {string} prefixedSelector - The CSS selector with the prefix applied.
+ * @param {string} filePath - The source CSS file path.
  * @returns {string} The transformed CSS selector.
  */
-function transformSelector(prefix, selector, prefixedSelector) {
+function transformSelector(prefix, selector, prefixedSelector, filePath) {
+  // Keep dashboard/sidepanel styles global (no selector prefixing).
+  if (filePath?.endsWith('pages.css')) {
+    return selector;
+  }
+
   if ([':root', ':host', 'html', 'body'].includes(selector)) {
     return ':host';
   }

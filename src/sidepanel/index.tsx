@@ -1,4 +1,4 @@
-import '@assets/styles/index.css';
+import '@assets/styles/pages.css';
 
 import { createRoot } from 'react-dom/client';
 

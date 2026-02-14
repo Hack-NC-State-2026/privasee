@@ -1,8 +1,12 @@
-import styles from '@assets/styles/index.css?inline';
-import createShadowRoot from '@utils/createShadowRoot';
+import '@assets/styles/pages.css';
+
+import { createRoot } from 'react-dom/client';
 
 import Options from './Options';
 
-const root = createShadowRoot(styles);
+const container = document.getElementById('my-ext-options-page');
+if (!container) {
+  throw new Error('Options page mount root not found.');
+}
 
-root.render(<Options />);
+createRoot(container).render(<Options />);
