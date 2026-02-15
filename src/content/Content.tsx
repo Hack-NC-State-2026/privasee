@@ -33,7 +33,6 @@ type SignupContext = {
   isDialogLike: boolean;
 };
 
-const SESSION_SEEN_KEY_PREFIX = 'privasee:overlay:seen:';
 const SESSION_DISMISS_KEY_PREFIX = 'privasee:overlay:dismissed:';
 const SESSION_SIGNUP_JOURNEY_KEY_PREFIX = 'privasee:overlay:signup-journey:';
 const SNOOZE_KEY = 'privasee_overlay_snooze_by_domain';
@@ -41,9 +40,15 @@ const SIGNUP_JOURNEY_TTL_MS = 30 * 60 * 1000;
 
 const DOMAIN = window.location.hostname;
 
-const DEBUG_ALWAYS_SHOW_ON_RELOAD = false;
+/**
+ * Debug flag:
+ * When true, the signup overlay is allowed to show on every page reload
+ * (still only when signup intent is detected on the current page).
+ */
+const DEBUG_SHOW_ON_EVERY_SIGNUP_RELOAD = true;
 
 const SIGNUP_KEYWORDS = [
+  'agree and join',
   'sign up',
   'signup',
   'register',
@@ -62,10 +67,12 @@ const LOGIN_KEYWORDS = ['sign in', 'login', 'log in'];
 const STEP_BUTTON_HINTS = ['next', 'continue'];
 
 const AUTH_ACTION_KEYWORDS = [
+  'agree and join',
   'sign up',
   'signup',
   'register',
   'create account',
+  'create your account',
   'join',
   'continue with',
   'continue',
@@ -375,9 +382,10 @@ export default function Content(): JSX.Element {
   const currentPathRef = useRef(window.location.pathname);
   const overlayRef = useRef<HTMLElement | null>(null);
   const fetchedForPathRef = useRef<string | null>(null);
+  /** In-memory only: avoid showing overlay again in this page load. Resets on tab close/refresh. */
+  const hasShownThisLoadRef = useRef(false);
 
   const dismissSessionKey = getSessionKey(SESSION_DISMISS_KEY_PREFIX);
-  const seenSessionKey = getSessionKey(SESSION_SEEN_KEY_PREFIX);
 
   const openBrowserSidePanel = useCallback(() => {
     if (chrome.runtime?.openOptionsPage) {
@@ -479,20 +487,17 @@ export default function Content(): JSX.Element {
   const showOverlay = useCallback(async () => {
     if (visible) return;
 
-    if (!DEBUG_ALWAYS_SHOW_ON_RELOAD) {
-      if (hasSessionFlag(dismissSessionKey) || hasSessionFlag(seenSessionKey))
-        return;
+    if (!DEBUG_SHOW_ON_EVERY_SIGNUP_RELOAD) {
+      if (hasSessionFlag(dismissSessionKey)) return;
+      if (hasShownThisLoadRef.current) return;
       if (await isSnoozed(DOMAIN)) return;
     }
 
+    hasShownThisLoadRef.current = true;
     setVisible(true);
 
-    if (!DEBUG_ALWAYS_SHOW_ON_RELOAD) {
-      setSessionFlag(seenSessionKey);
-    }
-
     fetchInsight();
-  }, [visible, dismissSessionKey, fetchInsight, seenSessionKey]);
+  }, [visible, dismissSessionKey, fetchInsight]);
 
   const evaluateIntentAndMaybeShow = useCallback(async () => {
     const context = findSignupContext();
@@ -531,6 +536,12 @@ export default function Content(): JSX.Element {
       return;
     }
 
+    // When page text shows signup/join/create-account CTAs, show overlay immediately.
+    if (pageIntentDetected) {
+      await showOverlay();
+      return;
+    }
+
     const active = document.activeElement;
     if (!(active instanceof HTMLElement)) return;
 
@@ -561,7 +572,7 @@ export default function Content(): JSX.Element {
   }, [showOverlay]);
 
   const dismissForSession = useCallback(() => {
-    if (!DEBUG_ALWAYS_SHOW_ON_RELOAD) {
+    if (!DEBUG_SHOW_ON_EVERY_SIGNUP_RELOAD) {
       setSessionFlag(dismissSessionKey);
     }
     setVisible(false);
@@ -671,6 +682,7 @@ export default function Content(): JSX.Element {
       if (currentPathRef.current === window.location.pathname) return;
       currentPathRef.current = window.location.pathname;
       fetchedForPathRef.current = null;
+      hasShownThisLoadRef.current = false;
       setVisible(false);
       setHasIntent(false);
       setInsight(null);
@@ -750,9 +762,9 @@ export default function Content(): JSX.Element {
       .then((res) => res.json())
       .then((data: Record<string, unknown>) => {
         // eslint-disable-next-line no-console
-        console.log('[privasee:content] tos_processor response:', data);
+        console.log('[privasee:content] backend raw response (untouched):', data);
         // eslint-disable-next-line no-console
-        console.log('[privasee:content] overlay_summary:', data?.overlay_summary ?? 'not present (202 or no cache hit)');
+        console.log('[privasee:content] backend raw response JSON:', JSON.stringify(data, null, 2));
       })
       .catch((err) => {
         // eslint-disable-next-line no-console
@@ -810,9 +822,10 @@ export default function Content(): JSX.Element {
       details: 'Look for explicit deletion and retention windows.',
     },
   ];
+  // Risk factors use explanation (in details), not evidence, for user-facing text
   const rawConcerns = insight?.keyConcerns ?? [];
   const keyConcerns =
-    rawConcerns.length > 0 ? rawConcerns.slice(0, 2) : fallbackConcerns;
+    rawConcerns.length > 0 ? rawConcerns.slice(0, 3) : fallbackConcerns;
 
   const likelyData = insight?.likelyDataCollected ?? [];
 
@@ -873,22 +886,26 @@ export default function Content(): JSX.Element {
         </header>
 
         <section className='privasee-section-stack'>
-          {keyConcerns.map((tile) => (
-            <article
-              key={tile.title}
-              className={`privasee-concern-card ${badgeConfig.tileClassName}`}
-            >
-              <h3
-                className={`privasee-concern-title ${badgeConfig.titleClassName}`}
-              >
-                {tile.title}
-              </h3>
+          {keyConcerns.map((tile, index) => {
+            const concernToneClass = index < 2 ? 'is-critical' : 'is-medium';
 
-              <p className='privasee-concern-text'>
-                {tile.details || 'Review this clause in the policy for more details.'}
-              </p>
-            </article>
-          ))}
+            return (
+              <article
+                key={tile.title}
+                className={`privasee-concern-card ${concernToneClass}`}
+              >
+                <h3
+                  className={`privasee-concern-title ${concernToneClass}`}
+                >
+                  {tile.title}
+                </h3>
+
+                <p className='privasee-concern-text'>
+                  {tile.details || 'Review this clause in the policy for more details.'}
+                </p>
+              </article>
+            );
+          })}
 
           {likelyData.length > 0 ? (
             <article className='privasee-info-card'>

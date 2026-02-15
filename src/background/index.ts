@@ -52,6 +52,7 @@ type RuntimeMessage =
 type OverlaySummaryAttribute = {
   title: string;
   evidence: string;
+  explanation?: string;
   color: string;
   sensitivity_level: number;
 };
@@ -59,6 +60,8 @@ type OverlaySummaryAttribute = {
 type OverlaySummaryResponse = {
   domain: string;
   top_high_risk_attributes: OverlaySummaryAttribute[];
+  data_retention_policy?: { title: string; explanation: string };
+  mitigations?: { title: string; mitigation: string }[];
   has_cached_analysis: boolean;
 };
 
@@ -337,7 +340,7 @@ async function fetchOverlaySummary(
     }
     const data = (await res.json()) as OverlaySummaryResponse;
     // eslint-disable-next-line no-console
-    console.log('[privasee] overlay_summary result:', JSON.stringify(data, null, 2));
+    console.log('[privasee] overlay_summary backend raw response (untouched):', data);
     return data;
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -356,15 +359,21 @@ const buildInsightFromOverlaySummary = (
   summary: OverlaySummaryResponse,
   cached: Record<string, unknown> | undefined
 ): PrivacyInsight => {
-  // Key concerns from top-3 high-risk attributes
+  // Key concerns: set details from explanation only (never evidence, no fallback to evidence).
   const keyConcerns: InsightItem[] = summary.top_high_risk_attributes.map(
     (attr) => ({
       title: attr.title,
-      details:
-        attr.evidence ||
-        'Review this clause in the policy for more details.',
+      details: attr.explanation?.trim() ?? undefined,
     })
   );
+
+  const retentionSummary =
+    summary.data_retention_policy?.explanation?.trim() ?? undefined;
+
+  const recommendations: string[] =
+    summary.mitigations
+      ?.map((m) => m.mitigation?.trim())
+      .filter((s): s is string => Boolean(s)) ?? [];
 
   // Fill remaining sections from the full cached analysis if available
   if (cached) {
@@ -373,8 +382,17 @@ const buildInsightFromOverlaySummary = (
       ...full,
       keyConcerns:
         keyConcerns.length > 0 ? keyConcerns : full.keyConcerns,
+      retentionSummary: retentionSummary ?? full.retentionSummary,
+      recommendations:
+        recommendations.length > 0 ? recommendations : full.recommendations,
     };
   }
+
+  const fallbackRecommendations = [
+    'Use a dedicated email alias for new signups.',
+    'Skip optional profile fields where possible.',
+    'Review account privacy settings immediately after registration.',
+  ];
 
   // No full analysis available yet — return a slim insight
   return {
@@ -393,12 +411,10 @@ const buildInsightFromOverlaySummary = (
                 'We are extracting key risk clauses from the linked policy pages.',
             },
           ],
-    recommendations: [
-      'Use a dedicated email alias for new signups.',
-      'Skip optional profile fields where possible.',
-      'Review account privacy settings immediately after registration.',
-    ],
+    recommendations:
+      recommendations.length > 0 ? recommendations : fallbackRecommendations,
     retentionSummary:
+      retentionSummary ??
       'Retention policy details are still being analyzed. Review deletion and retention terms before submitting.',
     generatedAt: Date.now(),
   };
@@ -432,6 +448,8 @@ async function fetchTosEnrichedOnce(
   console.log('[privasee] tos_processor request URL:', requestUrl);
   const res = await fetch(requestUrl);
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  // eslint-disable-next-line no-console
+  console.log('[privasee] tos_processor backend raw response (untouched):', data);
   return { status: res.status, data, requestUrl };
 }
 
@@ -457,7 +475,10 @@ async function pollOnce(
     return undefined;
   }
 
-  return (await res.json()) as Record<string, unknown>;
+  const data = (await res.json()) as Record<string, unknown>;
+  // eslint-disable-next-line no-console
+  console.log('[privasee] tos_processor poll backend raw response (untouched):', data);
+  return data;
 }
 
 /**

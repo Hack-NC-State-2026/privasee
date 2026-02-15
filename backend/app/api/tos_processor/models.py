@@ -277,7 +277,12 @@ class UserRightsSection(BaseModel):
 
 
 class RetentionSection(BaseModel):
+    """Retention signals. retention_explanation is overlay-ready: implications, vagueness, what users can do."""
     retention_duration: str = Field(..., description="Normalized: indefinite, P2Y, case_by_case, unknown, etc.")
+    retention_explanation: str = Field(
+        "",
+        description="Overlay-ready paragraph: implications of retention (e.g. how long, indefinite?), whether retention language is vague, and what users can do (e.g. request deletion, export).",
+    )
     deletion_rights: Signal
     vague_retention_language: Signal
 

@@ -93,11 +93,9 @@ For vague language:
 Extract exact phrases found.
 
 For retention:
-Normalize duration into:
-• "indefinite"
-• ISO 8601 duration if exact (e.g., "P2Y")
-• "case_by_case"
-• "unknown"
+• Normalize retention_duration into: "indefinite", ISO 8601 if exact (e.g. "P2Y"), "case_by_case", "unknown".
+• Always fill "retention_explanation": one short overlay-ready paragraph that (1) states the implications (e.g. data kept indefinitely, or case-by-case so unclear), (2) says whether retention language is vague and why that matters, (3) says what users can do (e.g. request deletion via My Activity, delete account, or that options are limited). Example: "Data may be kept indefinitely or case-by-case; language is vague ('as long as necessary'). You can request deletion via My Activity or delete your Google Account."
+• For deletion_rights and vague_retention_language, always fill "explanation" (what this means for the user and what they can do) and "mitigation" (concrete steps if any). Do not leave explanation or mitigation empty for retention sub-fields.
 
 For rights:
 Explicitly detect:
