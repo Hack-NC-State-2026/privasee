@@ -98,8 +98,8 @@
 #     legal_terms: LegalTerms
 #     red_flags: list[RedFlag]
 
-from typing import List, Literal, Optional
-from pydantic import BaseModel, Field
+from typing import get_args, List, Literal, Optional
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------
 # Data collection allowed values (Literal types for consistent model output)
@@ -170,9 +170,21 @@ SensitiveCategoryType = Literal[
 ]
 
 
+def _filter_types(values: list, allowed: frozenset) -> list:
+    """Keep only values in allowed set; ignore extras from LLM."""
+    if not isinstance(values, list):
+        return values
+    return [x for x in values if x in allowed]
+
+
 class PersonalIdentifiersCollected(BaseModel):
     """PII types the policy says are collected. Only use values from PIIType."""
     types: List[PIIType] = Field(default_factory=list, description="PII types collected")
+
+    @field_validator("types", mode="before")
+    @classmethod
+    def filter_types(cls, v: object) -> list:
+        return _filter_types(v if isinstance(v, list) else [], frozenset(get_args(PIIType)))
     evidence: str = Field("", description="Quoted evidence from the document")
     explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
     mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
@@ -181,6 +193,11 @@ class PersonalIdentifiersCollected(BaseModel):
 class DeviceDataCollected(BaseModel):
     """Device/technical data types collected. Only use values from DeviceDataType."""
     types: List[DeviceDataType] = Field(default_factory=list, description="Device data types collected")
+
+    @field_validator("types", mode="before")
+    @classmethod
+    def filter_types(cls, v: object) -> list:
+        return _filter_types(v if isinstance(v, list) else [], frozenset(get_args(DeviceDataType)))
     evidence: str = Field("", description="Quoted evidence from the document")
     explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
     mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
@@ -189,6 +206,11 @@ class DeviceDataCollected(BaseModel):
 class LocationDataCollected(BaseModel):
     """Location data types collected. Only use values from LocationType."""
     types: List[LocationType] = Field(default_factory=list, description="Location data types collected")
+
+    @field_validator("types", mode="before")
+    @classmethod
+    def filter_types(cls, v: object) -> list:
+        return _filter_types(v if isinstance(v, list) else [], frozenset(get_args(LocationType)))
     evidence: str = Field("", description="Quoted evidence from the document")
     explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
     mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
@@ -197,6 +219,11 @@ class LocationDataCollected(BaseModel):
 class UserContentCollected(BaseModel):
     """User-generated content types collected. Only use values from UserContentType."""
     types: List[UserContentType] = Field(default_factory=list, description="User content types collected")
+
+    @field_validator("types", mode="before")
+    @classmethod
+    def filter_types(cls, v: object) -> list:
+        return _filter_types(v if isinstance(v, list) else [], frozenset(get_args(UserContentType)))
     evidence: str = Field("", description="Quoted evidence from the document")
     explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
     mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
@@ -205,6 +232,11 @@ class UserContentCollected(BaseModel):
 class ThirdPartyDataCollected(BaseModel):
     """Third-party source types from which data is obtained. Only use values from ThirdPartySourceType."""
     types: List[ThirdPartySourceType] = Field(default_factory=list, description="Third-party source types")
+
+    @field_validator("types", mode="before")
+    @classmethod
+    def filter_types(cls, v: object) -> list:
+        return _filter_types(v if isinstance(v, list) else [], frozenset(get_args(ThirdPartySourceType)))
     evidence: str = Field("", description="Quoted evidence from the document")
     explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
     mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
@@ -213,6 +245,11 @@ class ThirdPartyDataCollected(BaseModel):
 class SensitiveDataCollected(BaseModel):
     """Sensitive/special category data. Only use values from SensitiveCategoryType."""
     types: List[SensitiveCategoryType] = Field(default_factory=list, description="Sensitive categories collected")
+
+    @field_validator("types", mode="before")
+    @classmethod
+    def filter_types(cls, v: object) -> list:
+        return _filter_types(v if isinstance(v, list) else [], frozenset(get_args(SensitiveCategoryType)))
     evidence: str = Field("", description="Quoted evidence from the document")
     explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
     mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")

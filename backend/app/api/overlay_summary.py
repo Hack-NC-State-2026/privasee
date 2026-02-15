@@ -15,6 +15,70 @@ logger = logging.getLogger(__name__)
 
 TOS_CACHE_PREFIX = "tos:process:"
 
+# Map each attribute name to its data-collection section type (for deduplicating by type in overlay).
+# Section types align with data_collection in PolicyAnalysis: one entry per "category" of data.
+ATTRIBUTE_TO_SECTION_TYPE: dict[str, str] = {
+    # personal_identifiers
+    "name": "personal_identifiers",
+    "email": "personal_identifiers",
+    "phone_number": "personal_identifiers",
+    "physical_address": "personal_identifiers",
+    "date_of_birth": "personal_identifiers",
+    "government_id": "personal_identifiers",
+    "financial_account": "personal_identifiers",
+    "biometric": "sensitive_data",
+    "photo": "personal_identifiers",
+    "gender": "personal_identifiers",
+    "nationality": "personal_identifiers",
+    "race_ethnicity": "sensitive_data",
+    # ip_address (own section)
+    "ip_address": "ip_address",
+    # precise_location
+    "precise_gps": "precise_location",
+    "coarse_location": "precise_location",
+    "wifi_cell": "precise_location",
+    "ip_derived": "precise_location",
+    # device_fingerprinting
+    "device_id": "device_fingerprinting",
+    "browser_info": "device_fingerprinting",
+    "os": "device_fingerprinting",
+    "screen_resolution": "device_fingerprinting",
+    "language": "device_fingerprinting",
+    "timezone": "device_fingerprinting",
+    "fingerprint": "device_fingerprinting",
+    # user_content
+    "posts": "user_content",
+    "messages": "user_content",
+    "photos": "user_content",
+    "videos": "user_content",
+    "search_history": "user_content",
+    "purchase_history": "user_content",
+    "contacts": "user_content",
+    # third_party_data
+    "social_media": "third_party_data",
+    "advertisers": "third_party_data",
+    "analytics": "third_party_data",
+    "data_brokers": "third_party_data",
+    "affiliates": "third_party_data",
+    # sensitive_data
+    "health": "sensitive_data",
+    "genetic": "sensitive_data",
+    "political": "sensitive_data",
+    "religious": "sensitive_data",
+    "sexual_orientation": "sensitive_data",
+    "union_membership": "sensitive_data",
+    "criminal": "sensitive_data",
+    # age/special (treat as sensitive for overlay)
+    "age_under_13": "sensitive_data",
+    "age_13_to_17": "sensitive_data",
+    "parental_consent_required": "sensitive_data",
+}
+
+
+def _attribute_section_type(attr_name: str) -> str:
+    """Return the data-collection section type for this attribute; fallback to attribute name if unknown."""
+    return ATTRIBUTE_TO_SECTION_TYPE.get(attr_name, attr_name)
+
 
 def _cache_key_for_domain(domain: str) -> str:
     return f"{TOS_CACHE_PREFIX}{domain}"
@@ -131,9 +195,21 @@ def compute_top_risks(domain: str) -> dict[str, Any]:
     all_attrs = get_site_attributes(normalized_domain)
     logger.info("All attributes for %s: %s", normalized_domain, all_attrs)
 
-    # 2. Keep only red (high risk), take first 3
+    # 2. Keep only red (high risk); take first 3 with distinct section types (no duplicate categories)
     red_attrs = [a for a in all_attrs if a.get("color") == "red"]
-    top_3 = red_attrs[:3]
+    seen_section_types: set[str] = set()
+    top_3: list[dict[str, Any]] = []
+    for a in red_attrs:
+        attr_name = a.get("attribute")
+        if not attr_name:
+            continue
+        section_type = _attribute_section_type(attr_name)
+        if section_type in seen_section_types:
+            continue
+        seen_section_types.add(section_type)
+        top_3.append(a)
+        if len(top_3) >= 3:
+            break
     logger.info("Top-3 high-risk (red) attributes for %s: %s", normalized_domain, top_3)
 
     # 3. Cached TOS analysis (for evidence, explanation, retention, mitigation)

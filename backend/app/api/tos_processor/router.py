@@ -22,6 +22,9 @@ TOS_CACHE_PREFIX = "tos:process:"
 # In-memory store for the last POST result; GET returns this.
 _fetched_pages: dict[str, str] = {}
 
+# In-flight cache keys to avoid redundant processing for the same domain(s).
+_processing_cache_keys: set[str] = set()
+
 
 def _cache_key_for_urls(urls: list[str]) -> str:
     """Cache key from domain name(s) extracted from the URLs."""
@@ -91,6 +94,8 @@ async def _run_process_and_cache(urls: list[str]) -> None:
         logger.info("Stored %d attributes for %d domain(s)", len(found_attrs), len(domains))
     except Exception as e:
         logger.exception("Background TOS process failed: %s", e)
+    finally:
+        _processing_cache_keys.discard(_cache_key_for_urls(urls))
 
 
 @router.get("/")
@@ -174,6 +179,16 @@ async def tos_processor_get_process(
             payload,
         )
         return payload
+    if cache_key in _processing_cache_keys:
+        logger.info("Skipping redundant process request for cache_key=%s", cache_key)
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "processing",
+                "message": "Analysis started in background. Call this endpoint again with the same URLs to retrieve the result.",
+            },
+        )
+    _processing_cache_keys.add(cache_key)
     asyncio.create_task(_run_process_and_cache(urls))
     return JSONResponse(
         status_code=202,
@@ -209,6 +224,16 @@ async def tos_processor_root(
             payload,
         )
         return payload
+    if cache_key in _processing_cache_keys:
+        logger.info("Skipping redundant process request for cache_key=%s", cache_key)
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "processing",
+                "message": "Analysis started in background. Call this endpoint again with the same URLs to retrieve the result.",
+            },
+        )
+    _processing_cache_keys.add(cache_key)
     asyncio.create_task(_run_process_and_cache(urls))
     return JSONResponse(
         status_code=202,
