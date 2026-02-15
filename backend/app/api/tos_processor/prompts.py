@@ -108,16 +108,15 @@ Explicitly detect:
 • opt_out_ads
 • opt_out_training
 
-For data collection, use ONLY these allowed values in each "types" array (no other values):
+For data collection, every field (including ip_address) must include "explanation" (why this matters for privacy) and "mitigation" (practical steps users can take to limit exposure, e.g. deny permissions, use VPN, opt out, limit shared data). Use ONLY these allowed values in each "types" array (no other values):
 • personal_identifiers.types: name, email, phone_number, physical_address, date_of_birth, government_id, financial_account, biometric, photo, gender, nationality, race_ethnicity, ip_address
 • precise_location.types: precise_gps, coarse_location, wifi_cell, ip_derived
 • device_fingerprinting.types: device_id, browser_info, os, screen_resolution, language, timezone, fingerprint, ip_address
 • user_content.types: posts, messages, photos, videos, search_history, purchase_history, contacts
 • third_party_data.types: social_media, advertisers, analytics, data_brokers, affiliates
 • sensitive_data.types: health, biometric, genetic, political, religious, sexual_orientation, union_membership, criminal
-• children_data.types: age_under_13, age_13_to_17, parental_consent_required
 
-For each data collection category include "evidence" with a short quoted excerpt. Use empty list [] when not mentioned.
+For each data collection category include "evidence" (short quoted excerpt), "explanation" (why this collection matters for privacy), and "mitigation" (practical user-facing steps to reduce risk, e.g. deny location, use alias email, opt out of ads). Use empty list [] for types when not mentioned.
 
 For sensitive data red flags:
 Detect references to: biometric, health, precise location, children, political, religious, sexual orientation
@@ -133,6 +132,8 @@ Do not summarize.
 Do not interpret beyond written language.
 
 Scoring fields must be rule-based from extracted signals only.
+
+For the scores section, include "posture_explanation": a short explanation of why the overall posture (low_risk, moderate_risk, high_risk) was assigned, based on the extracted signals (e.g. "High risk due to broad data collection, indefinite retention, and mandatory arbitration.").
 
 The policies are below:
 

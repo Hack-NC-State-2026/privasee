@@ -169,59 +169,61 @@ SensitiveCategoryType = Literal[
     "race_ethnicity",
 ]
 
-ChildrenDataType = Literal[
-    "age_under_13",
-    "age_13_to_17",
-    "parental_consent_required",
-]
-
 
 class PersonalIdentifiersCollected(BaseModel):
     """PII types the policy says are collected. Only use values from PIIType."""
     types: List[PIIType] = Field(default_factory=list, description="PII types collected")
     evidence: str = Field("", description="Quoted evidence from the document")
+    explanation: str = Field("", description="Brief explanation of privacy risk or significance of collecting this PII")
+    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. limit shared fields, use alias)")
 
 
 class DeviceDataCollected(BaseModel):
     """Device/technical data types collected. Only use values from DeviceDataType."""
     types: List[DeviceDataType] = Field(default_factory=list, description="Device data types collected")
     evidence: str = Field("", description="Quoted evidence from the document")
+    explanation: str = Field("", description="Brief explanation of privacy risk or significance of this device data collection")
+    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. disable tracking, use privacy-focused browser)")
 
 
 class LocationDataCollected(BaseModel):
     """Location data types collected. Only use values from LocationType."""
     types: List[LocationType] = Field(default_factory=list, description="Location data types collected")
     evidence: str = Field("", description="Quoted evidence from the document")
+    explanation: str = Field("", description="Brief explanation of privacy risk or significance of location collection")
+    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. deny or limit location permission)")
 
 
 class UserContentCollected(BaseModel):
     """User-generated content types collected. Only use values from UserContentType."""
     types: List[UserContentType] = Field(default_factory=list, description="User content types collected")
     evidence: str = Field("", description="Quoted evidence from the document")
+    explanation: str = Field("", description="Brief explanation of privacy risk or significance of user content collection")
+    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. minimize shared content, use separate account)")
 
 
 class ThirdPartyDataCollected(BaseModel):
     """Third-party source types from which data is obtained. Only use values from ThirdPartySourceType."""
     types: List[ThirdPartySourceType] = Field(default_factory=list, description="Third-party source types")
     evidence: str = Field("", description="Quoted evidence from the document")
+    explanation: str = Field("", description="Brief explanation of privacy risk or significance of third-party data sources")
+    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. opt out of sharing, block third-party cookies)")
 
 
 class SensitiveDataCollected(BaseModel):
     """Sensitive/special category data. Only use values from SensitiveCategoryType."""
     types: List[SensitiveCategoryType] = Field(default_factory=list, description="Sensitive categories collected")
     evidence: str = Field("", description="Quoted evidence from the document")
-
-
-class ChildrenDataCollected(BaseModel):
-    """Children-related data or provisions. Only use values from ChildrenDataType."""
-    types: List[ChildrenDataType] = Field(default_factory=list, description="Children data types or provisions")
-    evidence: str = Field("", description="Quoted evidence from the document")
+    explanation: str = Field("", description="Brief explanation of privacy risk or significance of sensitive category collection")
+    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. avoid providing if optional, use privacy controls)")
 
 
 class Signal(BaseModel):
     """A single extracted signal: found/not_found/unknown + evidence quote."""
     status: str = Field(..., description="One of: true, false, not_found, unknown")
     evidence: str = Field("", description="Direct quoted language from the document, or empty")
+    explanation: str = Field("", description="Brief explanation of privacy risk or significance when used in data collection; optional elsewhere")
+    mitigation: str = Field("", description="Practical steps users can take to limit exposure when used in data collection; optional elsewhere")
 
 
 class RedFlag(BaseModel):
@@ -255,7 +257,6 @@ class DataCollectionSection(BaseModel):
     user_content: UserContentCollected
     third_party_data: ThirdPartyDataCollected
     sensitive_data: SensitiveDataCollected
-    children_data: ChildrenDataCollected
 
 
 class DataUsageSection(BaseModel):
@@ -298,6 +299,10 @@ class LegalTermsSection(BaseModel):
 class ScoreSection(BaseModel):
     privacy_score: float = Field(..., description="Overall privacy score 0-100")
     posture: str = Field(..., description="One of: low_risk, moderate_risk, high_risk, unknown")
+    posture_explanation: str = Field(
+        "",
+        description="Brief explanation of why this posture/risk level was assigned (e.g. why high_risk)",
+    )
     data_minimization: float = Field(..., description="Score 0-100")
     retention_transparency: float = Field(..., description="Score 0-100")
     third_party_exposure: float = Field(..., description="Score 0-100")

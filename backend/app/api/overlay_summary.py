@@ -49,7 +49,6 @@ def _get_evidence_for_attribute(attr: str, analysis: dict[str, Any]) -> str:
         "user_content",
         "third_party_data",
         "sensitive_data",
-        "children_data",
     )
 
     for section_key in typed_sections:

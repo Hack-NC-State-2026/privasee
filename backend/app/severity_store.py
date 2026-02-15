@@ -203,7 +203,6 @@ def collect_attributes_from_data_collection(data_collection: dict[str, Any]) -> 
         "user_content",
         "third_party_data",
         "sensitive_data",
-        "children_data",
     ):
         section = data_collection.get(section_key)
         if section and isinstance(section, dict):
