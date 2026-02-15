@@ -5,7 +5,6 @@ export type DashboardTourStep = {
   targetId: string;
   title: string;
   description: string;
-  reason: string;
 };
 
 type DashboardTourProps = {
@@ -318,7 +317,6 @@ export default function DashboardTour({
         </p>
         <h2 className='tour-step-title'>{activeStep.title}</h2>
         <p className='tour-step-description'>{activeStep.description}</p>
-        <p className='tour-step-reason'>Why this exists: {activeStep.reason}</p>
         {!hasSpotlight ? (
           <p className='tour-step-note'>
             This section is currently hidden by your filters or screen size.

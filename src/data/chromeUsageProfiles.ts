@@ -1,9 +1,15 @@
 import {
+  AttributeSeverityColor,
   DataUsageProfile,
   DataManagementLevel,
   PrivacyMetricSet,
   WebsiteProfile,
 } from '@/data/dashboardProfiles';
+
+const BACKEND_ORIGIN = 'http://localhost:8000';
+const TOS_CACHE_PREFIX = 'tos:process:';
+const TOS_CACHED_ANALYSES_URL = `${BACKEND_ORIGIN}/api/tos_processor/cached`;
+const ATTRIBUTE_SEVERITY_URL = `${BACKEND_ORIGIN}/api/attribute_severity/`;
 
 const HISTORY_LOOKBACK_DAYS = 365;
 const HISTORY_MAX_RESULTS = 5000;
@@ -21,97 +27,6 @@ const MULTI_PART_TLDS = new Set([
   'com.mx',
   'co.nz',
 ]);
-
-const PERSONAL_IDENTIFIER_PRESETS: string[][] = [
-  ['Name', 'Email address', 'Physical address', 'IP address'],
-  [
-    'Name',
-    'Email address',
-    'Billing address',
-    'Financial account',
-  ],
-  ['Email address', 'Date of birth', 'Gender', 'IP address'],
-  [
-    'Account identifier',
-    'IP address',
-    'Device identifier',
-    'Location (IP-derived)',
-  ],
-];
-
-const PERMISSION_PRESETS: string[][] = [
-  ['Notifications', 'Camera / Mic', 'Cookies'],
-  ['Pop-ups', 'Location', 'Background sync'],
-  ['Sound', 'Automatic downloads', 'Clipboard'],
-  ['Third-party cookies', 'Device sensors', 'Cross-site tracking'],
-];
-
-const RISK_SIGNAL_PRESETS: string[][] = [
-  ['Requires periodic permission review', 'Broad data processing surface'],
-  ['Cookie and storage persistence detected', 'Potential cross-site linkage'],
-  ['Multiple browser capabilities requested', 'Review retention disclosures'],
-  ['Sign-in plus tracking signals present', 'Needs manual controls review'],
-];
-
-const DATA_USAGE_PRESETS: DataUsageProfile[] = [
-  {
-    modelTraining: 'not_found',
-    advertising: 'true',
-    dataSale: 'false',
-    crossCompanySharing: 'true',
-    anonymizationClaimed: 'true',
-  },
-  {
-    modelTraining: 'not_found',
-    advertising: 'true',
-    dataSale: 'not_found',
-    crossCompanySharing: 'true',
-    anonymizationClaimed: 'true',
-  },
-  {
-    modelTraining: 'not_found',
-    advertising: 'false',
-    dataSale: 'false',
-    crossCompanySharing: 'true',
-    anonymizationClaimed: 'true',
-  },
-];
-
-const RETENTION_DETAIL_PRESETS = [
-  { retentionDuration: 'case_by_case', vagueRetentionLanguage: true },
-  { retentionDuration: 'not_specified', vagueRetentionLanguage: true },
-  { retentionDuration: 'policy_defined', vagueRetentionLanguage: false },
-];
-
-const RED_FLAG_PRESETS: NonNullable<WebsiteProfile['redFlags']>[] = [
-  [
-    {
-      cause:
-        'Collection includes sensitive profile categories with high misuse impact.',
-      severity: 'high',
-    },
-    {
-      cause: 'Retention commitments are broad and not tied to a fixed timeline.',
-      severity: 'medium',
-    },
-  ],
-  [
-    {
-      cause: 'Cross-company data sharing expands profiling surface area.',
-      severity: 'medium',
-    },
-    {
-      cause: 'Advertising data flows can link activity across services.',
-      severity: 'medium',
-    },
-  ],
-  [
-    {
-      cause: 'Persistent device and network signals increase tracking risk.',
-      severity: 'high',
-    },
-  ],
-];
 
 type DomainAggregate = {
   domain: string;
@@ -200,16 +115,9 @@ const categorizeDomain = (domain: string): string => {
   return 'Web App';
 };
 
-const computePrivacyScore = (domain: string, visitCount: number): number => {
-  const seed = hashString(domain);
-  const variability = seed % 51;
-  const activityPenalty = clamp(Math.round(visitCount / 10), 0, 15);
-  return clamp(92 - variability - activityPenalty, 28, 96);
-};
-
-const toPosture = (privacyScore: number): DataManagementLevel => {
-  if (privacyScore >= 80) return 'excellent';
-  if (privacyScore >= 58) return 'watch';
+const toPostureFromRiskScore = (riskScore: number): DataManagementLevel => {
+  if (riskScore < 35) return 'excellent';
+  if (riskScore < 65) return 'watch';
   return 'critical';
 };
 
@@ -245,9 +153,6 @@ const buildMetrics = (domain: string, baseScore: number): PrivacyMetricSet => {
     ),
   };
 };
-
-const pickPreset = <T>(collection: T[], domain: string): T =>
-  collection[hashString(domain) % collection.length];
 
 const toRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -291,6 +196,106 @@ const readNestedStatus = (value: unknown): string => {
   return normalizeDataUsageValue(asRecord.status);
 };
 
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return null;
+  if (!Number.isFinite(value)) return null;
+  return value;
+};
+
+const normalizeDateFromValue = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+};
+
+const normalizeSeverityColor = (
+  value: unknown
+): AttributeSeverityColor | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'red' || normalized === 'yellow' || normalized === 'green') {
+    return normalized;
+  }
+  return null;
+};
+
+const normalizeIdentifierToSeverityKey = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, ' ')
+    .replace(/\s+/g, '_');
+
+const buildIdentifierSeverityMap = (
+  personalIdentifiers: string[],
+  severityByAttributeKey: Record<string, AttributeSeverityColor>
+): Record<string, AttributeSeverityColor> =>
+  personalIdentifiers.reduce<Record<string, AttributeSeverityColor>>(
+    (running, identifier) => {
+      const key = normalizeIdentifierToSeverityKey(identifier);
+      return {
+        ...running,
+        [identifier]: severityByAttributeKey[key] ?? 'yellow',
+      };
+    },
+    {}
+  );
+
+const calculateRiskScoreFromSeverityMap = (
+  identifierSeverityByIdentifier: Record<string, AttributeSeverityColor>
+): number => {
+  const colors = Object.values(identifierSeverityByIdentifier);
+  if (colors.length === 0) return 0;
+
+  let redCount = 0;
+  let yellowCount = 0;
+  let greenCount = 0;
+
+  colors.forEach((color) => {
+    if (color === 'red') {
+      redCount += 1;
+      return;
+    }
+    if (color === 'yellow') {
+      yellowCount += 1;
+      return;
+    }
+    greenCount += 1;
+  });
+
+  const weightedTotal = redCount * 3 + yellowCount * 2 + greenCount;
+  const weightedAverage = (weightedTotal / (colors.length * 3)) * 100;
+  return Math.round(weightedAverage);
+};
+
+const buildRiskSignals = (
+  analysis: Record<string, unknown>,
+  redFlags: NonNullable<WebsiteProfile['redFlags']>
+): string[] => {
+  const overlaySummary = toRecord(analysis.overlay_summary);
+  const topRiskAttributes = Array.isArray(
+    overlaySummary?.top_high_risk_attributes
+  )
+    ? overlaySummary.top_high_risk_attributes
+    : [];
+
+  const overlayTitles = topRiskAttributes
+    .map((rawItem) => toRecord(rawItem))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => (typeof item.title === 'string' ? item.title.trim() : ''))
+    .filter((title) => title.length > 0);
+
+  if (overlayTitles.length > 0) {
+    return overlayTitles.slice(0, 4);
+  }
+
+  return redFlags
+    .map((flag) => flag.cause)
+    .filter((cause) => cause.trim().length > 0)
+    .slice(0, 4);
+};
+
 export type ParsedPolicyDetails = {
   personalIdentifiers: string[];
   dataUsage: DataUsageProfile;
@@ -299,9 +304,9 @@ export type ParsedPolicyDetails = {
   redFlags: NonNullable<WebsiteProfile['redFlags']>;
 };
 
-export const extractPolicyDetailsFromAnalysis = (
+export function extractPolicyDetailsFromAnalysis(
   analysis: Record<string, unknown>
-): ParsedPolicyDetails => {
+): ParsedPolicyDetails {
   const dataCollection = toRecord(analysis.data_collection);
   const personalIdentifierSet = new Set<string>();
   Object.entries(dataCollection ?? {}).forEach(([rawKey, rawValue]) => {
@@ -380,6 +385,90 @@ export const extractPolicyDetailsFromAnalysis = (
     vagueRetentionLanguage,
     redFlags,
   };
+}
+
+const buildProfileFromAnalysis = (
+  record: DomainAggregate,
+  analysis: Record<string, unknown>,
+  severityByAttributeKey: Record<string, AttributeSeverityColor>
+): WebsiteProfile => {
+  const parsedDetails = extractPolicyDetailsFromAnalysis(analysis);
+  const scores = toRecord(analysis.scores);
+  const metadata = toRecord(analysis.metadata);
+  const identifierSeverityByIdentifier = buildIdentifierSeverityMap(
+    parsedDetails.personalIdentifiers,
+    severityByAttributeKey
+  );
+  const privacyScore = clamp(
+    calculateRiskScoreFromSeverityMap(identifierSeverityByIdentifier),
+    0,
+    100
+  );
+  const posture = toPostureFromRiskScore(privacyScore);
+  const fallbackMetricBaseScore = clamp(100 - privacyScore, 0, 100);
+  const scoreDrivenMetrics = buildMetrics(record.domain, fallbackMetricBaseScore);
+  const metrics: PrivacyMetricSet = {
+    dataMinimization: clamp(
+      Math.round(
+        toFiniteNumber(scores?.data_minimization) ??
+          scoreDrivenMetrics.dataMinimization
+      ),
+      0,
+      100
+    ),
+    retentionTransparency: clamp(
+      Math.round(
+        toFiniteNumber(scores?.retention_transparency) ??
+          scoreDrivenMetrics.retentionTransparency
+      ),
+      0,
+      100
+    ),
+    thirdPartyExposure: clamp(
+      Math.round(
+        toFiniteNumber(scores?.third_party_exposure) ??
+          scoreDrivenMetrics.thirdPartyExposure
+      ),
+      0,
+      100
+    ),
+    userControl: clamp(
+      Math.round(
+        toFiniteNumber(scores?.user_control) ?? scoreDrivenMetrics.userControl
+      ),
+      0,
+      100
+    ),
+    incidentTrackRecord: clamp(
+      Math.round(scoreDrivenMetrics.incidentTrackRecord),
+      0,
+      100
+    ),
+  };
+
+  const policyLastUpdated = normalizeDateFromValue(metadata?.policy_last_updated);
+  const { personalIdentifiers } = parsedDetails;
+
+  return {
+    domain: record.domain,
+    name: toDisplayName(record.domain),
+    category: categorizeDomain(record.domain),
+    accountCreated: new Date(record.firstVisitTime).toISOString(),
+    lastReviewed: policyLastUpdated ?? new Date(record.lastVisitTime).toISOString(),
+    sharedData: personalIdentifiers,
+    permissions: [],
+    riskSignals: buildRiskSignals(analysis, parsedDetails.redFlags),
+    personalIdentifiers,
+    attributeSeverityByIdentifier: identifierSeverityByIdentifier,
+    dataUsage: parsedDetails.dataUsage,
+    retentionDuration: parsedDetails.retentionDuration ?? undefined,
+    vagueRetentionLanguage: parsedDetails.vagueRetentionLanguage,
+    redFlags: parsedDetails.redFlags,
+    privacyScore,
+    posture,
+    verdict: toVerdict(posture),
+    metrics,
+  };
 };
 
 type GetChromeHistoryResponse = {
@@ -387,6 +476,13 @@ type GetChromeHistoryResponse = {
   items?: chrome.history.HistoryItem[];
   error?: string;
 };
+
+type CachedAnalysesResponse = {
+  matched?: Record<string, Record<string, unknown>>;
+  error?: string;
+};
+
+type AttributeSeverityResponse = Record<string, unknown>;
 
 const queryHistoryViaBackground = async (): Promise<chrome.history.HistoryItem[]> => {
   if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
@@ -489,36 +585,70 @@ const aggregateHistory = (items: chrome.history.HistoryItem[]): DomainAggregate[
     .slice(0, MAX_PROFILE_COUNT);
 };
 
-const buildProfile = (record: DomainAggregate): WebsiteProfile => {
-  const privacyScore = computePrivacyScore(record.domain, record.visitCount);
-  const posture = toPosture(privacyScore);
-  const lastVisit = new Date(record.lastVisitTime).toISOString();
-  const firstVisit = new Date(record.firstVisitTime).toISOString();
-  const personalIdentifiers = pickPreset(
-    PERSONAL_IDENTIFIER_PRESETS,
-    record.domain
-  );
-  const retentionDetails = pickPreset(RETENTION_DETAIL_PRESETS, record.domain);
+const fetchCachedAnalyses = async (
+  domains: string[]
+): Promise<Record<string, Record<string, unknown>>> => {
+  if (domains.length === 0) {
+    return {};
+  }
 
-  return {
-    domain: record.domain,
-    name: toDisplayName(record.domain),
-    category: categorizeDomain(record.domain),
-    accountCreated: firstVisit,
-    lastReviewed: lastVisit,
-    sharedData: personalIdentifiers,
-    permissions: pickPreset(PERMISSION_PRESETS, record.domain),
-    riskSignals: pickPreset(RISK_SIGNAL_PRESETS, record.domain),
-    personalIdentifiers,
-    dataUsage: pickPreset(DATA_USAGE_PRESETS, record.domain),
-    retentionDuration: retentionDetails.retentionDuration,
-    vagueRetentionLanguage: retentionDetails.vagueRetentionLanguage,
-    redFlags: pickPreset(RED_FLAG_PRESETS, record.domain),
-    privacyScore,
-    posture,
-    verdict: toVerdict(posture),
-    metrics: buildMetrics(record.domain, privacyScore),
-  };
+  const query = new URLSearchParams();
+  domains.forEach((domain) => {
+    query.append('domain', domain);
+  });
+
+  const requestUrl = `${TOS_CACHED_ANALYSES_URL}?${query.toString()}`;
+  const response = await fetch(requestUrl);
+  const payload = (await response
+    .json()
+    .catch(() => ({}))) as CachedAnalysesResponse;
+
+  if (!response.ok) {
+    const backendError =
+      typeof payload.error === 'string' && payload.error.trim().length > 0
+        ? payload.error
+        : `Backend returned ${response.status}`;
+    throw new Error(
+      `Failed to load cached policy analyses (${backendError}). Expected keys with prefix ${TOS_CACHE_PREFIX}<domain>.`
+    );
+  }
+
+  const matched = toRecord(payload.matched);
+  if (!matched) return {};
+
+  const parsed: Record<string, Record<string, unknown>> = {};
+  Object.entries(matched).forEach(([domain, rawAnalysis]) => {
+    const analysis = toRecord(rawAnalysis);
+    if (!analysis) return;
+    parsed[domain] = analysis;
+  });
+
+  return parsed;
+};
+
+const fetchAttributeSeverityMap = async (): Promise<
+  Record<string, AttributeSeverityColor>
+> => {
+  const response = await fetch(ATTRIBUTE_SEVERITY_URL);
+  const payload = (await response
+    .json()
+    .catch(() => ({}))) as AttributeSeverityResponse;
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to load attribute severity map (status ${response.status}) from config:attribute_severity.`
+    );
+  }
+
+  const severityByAttributeKey: Record<string, AttributeSeverityColor> = {};
+  Object.entries(payload).forEach(([attribute, rawEntry]) => {
+    const entry = toRecord(rawEntry);
+    const color = normalizeSeverityColor(entry?.color);
+    if (!color) return;
+    severityByAttributeKey[attribute.trim().toLowerCase()] = color;
+  });
+
+  return severityByAttributeKey;
 };
 
 export const buildChromeSiteSettingsUrl = (domain: string): string =>
@@ -529,5 +659,19 @@ export const buildChromeSiteSettingsUrl = (domain: string): string =>
 export const loadChromeUsageProfiles = async (): Promise<WebsiteProfile[]> => {
   const historyItems = await queryHistory();
   const topDomains = aggregateHistory(historyItems);
-  return topDomains.map(buildProfile);
+  if (topDomains.length === 0) return [];
+
+  const domains = topDomains.map((item) => item.domain);
+  const [cachedAnalysesByDomain, severityByAttributeKey] = await Promise.all([
+    fetchCachedAnalyses(domains),
+    fetchAttributeSeverityMap(),
+  ]);
+
+  return topDomains
+    .map((item) => {
+      const analysis = cachedAnalysesByDomain[item.domain];
+      if (!analysis) return null;
+      return buildProfileFromAnalysis(item, analysis, severityByAttributeKey);
+    })
+    .filter((profile): profile is WebsiteProfile => Boolean(profile));
 };

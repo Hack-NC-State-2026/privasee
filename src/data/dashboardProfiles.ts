@@ -15,6 +15,8 @@ export type DataUsageValue = DataUsageStatus | boolean | string | null | undefin
 
 export type DataUsageProfile = Record<string, DataUsageValue>;
 
+export type AttributeSeverityColor = 'red' | 'yellow' | 'green';
+
 export type RedFlagItem = {
   cause: string;
   severity: string;
@@ -30,6 +32,7 @@ export type WebsiteProfile = {
   permissions: string[];
   riskSignals: string[];
   personalIdentifiers?: string[];
+  attributeSeverityByIdentifier?: Record<string, AttributeSeverityColor>;
   dataUsage?: DataUsageProfile;
   retentionSummary?: string;
   retentionDuration?: string;

@@ -8,6 +8,7 @@ import {
 } from 'react';
 
 import {
+  AttributeSeverityColor,
   DataManagementLevel,
   DataUsageProfile,
   RedFlagItem,
@@ -31,7 +32,6 @@ type PostureStyle = {
   accent: string;
   accentSoft: string;
   badgeClass: string;
-  chipClass: string;
   label: string;
 };
 
@@ -45,42 +45,37 @@ const dashboardTourSteps: DashboardTourStep[] = [
   {
     id: 'overview',
     targetId: 'tour-overview',
-    title: 'Command Center Overview',
+    title: 'Privacy Risk Overview',
     description:
-      'This hero panel sets context, offers jump navigation, and exposes global controls.',
-    reason: 'Fast orientation reduces friction before users start triaging risks.',
+      'This header sets the demo context and gives jump links to Control Deck, Signal Lane, and Risk Cards, plus theme toggle.',
   },
   {
     id: 'kpis',
     targetId: 'tour-kpis',
-    title: 'KPI Snapshot',
+    title: 'Live KPI Snapshot',
     description:
-      'These metrics summarize account volume, average privacy score, and critical pressure.',
-    reason: 'A high-signal snapshot helps users prioritize without scanning every card.',
+      'These counters summarize accounts tracked, weighted average risk score, critical account count, and unique identifier fields monitored.',
   },
   {
     id: 'control',
     targetId: 'noir-control',
     title: 'Control Deck',
     description:
-      'Filters and search let users narrow the dataset by posture and account keywords.',
-    reason: 'Targeted filtering keeps large dashboards actionable during time pressure.',
+      'Use posture filters (Stable, Watch, Critical), keyword search, and refresh to re-sync from Chrome history and update visible cards.',
   },
   {
     id: 'signal',
     targetId: 'signal-lane',
-    title: 'Signal Lane',
+    title: 'Highest-Risk Queue',
     description:
-      'This lane ranks the highest exposure accounts first for immediate review.',
-    reason: 'Sorting by urgency supports quick response and reduces missed critical items.',
+      'Signal Lane surfaces the top-risk domains first, ordered by the computed privacy risk score so urgent accounts appear first.',
   },
   {
     id: 'risk-cards',
     targetId: 'risk-grid',
     title: 'Risk Cards',
     description:
-      'Each card shows identifiers collected, usage behavior, and direct settings controls.',
-    reason: 'Granular context enables confident account-level decisions and follow-up.',
+      'Each card shows a score ring and posture, identifiers color-coded from Valkey attribute severity, usage flags, retention details, and action buttons.',
   },
 ];
 
@@ -89,21 +84,18 @@ const postureStyles: Record<DataManagementLevel, PostureStyle> = {
     accent: '#3ef0c4',
     accentSoft: 'rgba(62, 240, 196, 0.2)',
     badgeClass: 'border-emerald-300/50 bg-emerald-300/16 text-emerald-100',
-    chipClass: 'border-emerald-300/45 bg-emerald-300/12 text-emerald-100',
     label: 'Stable',
   },
   watch: {
     accent: '#ffb347',
     accentSoft: 'rgba(255, 179, 71, 0.2)',
     badgeClass: 'border-amber-300/50 bg-amber-300/16 text-amber-100',
-    chipClass: 'border-amber-300/45 bg-amber-300/12 text-amber-100',
     label: 'Watch',
   },
   critical: {
     accent: '#ff5f7b',
     accentSoft: 'rgba(255, 95, 123, 0.2)',
     badgeClass: 'border-rose-300/50 bg-rose-300/16 text-rose-100',
-    chipClass: 'border-rose-300/45 bg-rose-300/12 text-rose-100',
     label: 'Critical',
   },
 };
@@ -126,6 +118,40 @@ const preferredUsageKeyOrder = [
 
 const getPersonalIdentifiers = (profile: WebsiteProfile): string[] =>
   profile.personalIdentifiers?.length ? profile.personalIdentifiers : profile.sharedData;
+
+const getIdentifierColor = (
+  profile: WebsiteProfile,
+  identifier: string
+): AttributeSeverityColor | null =>
+  profile.attributeSeverityByIdentifier?.[identifier] ?? null;
+
+const getIdentifierChipClass = (
+  profile: WebsiteProfile,
+  identifier: string
+): string => {
+  const color = getIdentifierColor(profile, identifier);
+  if (color === 'red') {
+    return 'border-rose-300/45 bg-rose-300/12 text-rose-100';
+  }
+  if (color === 'yellow') {
+    return 'border-amber-300/45 bg-amber-300/12 text-amber-100';
+  }
+  if (color === 'green') {
+    return 'border-emerald-300/45 bg-emerald-300/12 text-emerald-100';
+  }
+  return 'border-slate-500/60 bg-slate-800/75 text-slate-200';
+};
+
+const getIdentifierColorRank = (
+  profile: WebsiteProfile,
+  identifier: string
+): number => {
+  const color = getIdentifierColor(profile, identifier);
+  if (color === 'red') return 0;
+  if (color === 'yellow') return 1;
+  if (color === 'green') return 2;
+  return 3;
+};
 
 const getDataUsage = (profile: WebsiteProfile): DataUsageProfile =>
   profile.dataUsage ?? fallbackDataUsage;
@@ -172,7 +198,7 @@ const formatRetentionDuration = (value: string | null | undefined): string => {
 };
 
 const formatBooleanLabel = (value: boolean | null | undefined): string => {
-  if (value === true) return 'true';
+  if (value === true) return 'True';
   if (value === false) return 'false';
   return 'unknown';
 };
@@ -237,7 +263,7 @@ export default function Options(): JSX.Element {
 
       if (liveProfiles.length === 0) {
         setProfileSourceError(
-          'No Chrome app usage found in the last 12 months. Visit a few sites, then refresh.'
+          'No cached policy data was found for domains in your Chrome history. Add cache entries as tos:process:<domain>, then refresh.'
         );
       }
     } catch (error) {
@@ -331,30 +357,23 @@ export default function Options(): JSX.Element {
       (profile) => profile.posture === 'critical'
     ).length;
 
-    const monitoredFields = profiles.reduce((runningTotal, profile) => {
-      const identifiers = getPersonalIdentifiers(profile);
-      return runningTotal + identifiers.length;
-    }, 0);
-
-    const dataTypeFrequency = new Map<string, number>();
+    const uniqueIdentifierKeys = new Set<string>();
     profiles.forEach((profile) => {
       const identifiers = getPersonalIdentifiers(profile);
-      identifiers.forEach((field) => {
-        const current = dataTypeFrequency.get(field) ?? 0;
-        dataTypeFrequency.set(field, current + 1);
+      identifiers.forEach((identifier) => {
+        const key = identifier.trim().toLowerCase();
+        if (key.length > 0) {
+          uniqueIdentifierKeys.add(key);
+        }
       });
     });
-
-    const topFields = [...dataTypeFrequency.entries()]
-      .sort((left, right) => right[1] - left[1])
-      .slice(0, 6);
+    const monitoredFields = uniqueIdentifierKeys.size;
 
     return {
       totalAccounts,
       averageScore,
       criticalCount,
       monitoredFields,
-      topFields,
     };
   }, [profiles]);
 
@@ -387,7 +406,7 @@ export default function Options(): JSX.Element {
   const signalLane = useMemo(
     () =>
       [...profiles]
-        .sort((left, right) => left.privacyScore - right.privacyScore)
+        .sort((left, right) => right.privacyScore - left.privacyScore)
         .slice(0, 6),
     [profiles]
   );
@@ -406,7 +425,7 @@ export default function Options(): JSX.Element {
           `${profile.name} ${profile.domain} ${profile.category}`.toLowerCase();
         return searchableText.includes(cleanedQuery);
       })
-      .sort((left, right) => left.privacyScore - right.privacyScore);
+      .sort((left, right) => right.privacyScore - left.privacyScore);
   }, [profiles, activeFilter, query]);
 
   const jumpToSection = (sectionId: string): void => {
@@ -423,7 +442,7 @@ export default function Options(): JSX.Element {
             Syncing your Chrome app data...
           </p>
           <p className='mt-2 text-sm text-slate-400'>
-            Building cards from your real browsing history.
+            Matching Chrome history domains against backend cache data.
           </p>
         </section>
       );
@@ -446,7 +465,14 @@ export default function Options(): JSX.Element {
       <section id='risk-grid' className='mt-6 grid gap-4'>
         {visibleProfiles.map((profile, index) => {
           const posture = postureStyles[profile.posture];
-          const personalIdentifiers = getPersonalIdentifiers(profile);
+          const personalIdentifiers = [...getPersonalIdentifiers(profile)].sort(
+            (left, right) => {
+              const leftRank = getIdentifierColorRank(profile, left);
+              const rightRank = getIdentifierColorRank(profile, right);
+              if (leftRank !== rightRank) return leftRank - rightRank;
+              return left.localeCompare(right);
+            }
+          );
           const activeUsageLabels = getActiveUsageLabels(profile);
           const redFlags = getRedFlags(profile);
           const retentionDuration = formatRetentionDuration(
@@ -488,7 +514,7 @@ export default function Options(): JSX.Element {
                     </span>
                   </div>
 
-                  <div className='mt-4 grid grid-cols-[84px_1fr] gap-3'>
+                  <div className='mt-4 flex justify-start'>
                     <div
                       className='noir-score-ring'
                       style={{
@@ -498,29 +524,24 @@ export default function Options(): JSX.Element {
                         <span>{profile.privacyScore}</span>
                       </div>
                     </div>
-                    <div>
-                      <p className='text-xs uppercase tracking-[0.14em] text-slate-400'>
-                        Privacy Verdict
-                      </p>
-                      <p className='mt-1 text-sm leading-relaxed text-slate-200'>
-                        {profile.verdict}
-                      </p>
-                    </div>
                   </div>
                 </div>
 
                 <div className='min-w-0 grid gap-3 lg:grid-cols-2 lg:items-start'>
-                  <section className='rounded-2xl border border-slate-600/50 bg-slate-900/45 p-4 min-h-[260px]'>
+                  <section className='flex h-[190px] flex-col rounded-2xl border border-slate-600/50 bg-slate-900/45 p-4'>
                     <p className='text-xs uppercase tracking-[0.14em] text-slate-400'>
                       Data Points Collected
                     </p>
-                    <div className='mt-3 max-h-52 overflow-y-auto pr-1'>
+                    <div className='mt-2 min-h-0 flex-1 overflow-y-auto pr-1'>
                       {personalIdentifiers.length > 0 ? (
-                        <ul className='space-y-1.5'>
+                        <ul className='flex flex-wrap gap-1.5'>
                           {personalIdentifiers.map((item) => (
                             <li
                               key={`${profile.domain}-${item}`}
-                              className={`rounded-xl border px-2.5 py-1.5 text-xs ${posture.chipClass}`}>
+                              className={`inline-flex max-w-full rounded-lg border px-2 py-1 text-[11px] leading-tight ${getIdentifierChipClass(
+                                profile,
+                                item
+                              )}`}>
                               {item}
                             </li>
                           ))}
@@ -533,41 +554,44 @@ export default function Options(): JSX.Element {
                     </div>
                   </section>
 
-                  <section className='rounded-2xl border border-slate-600/50 bg-slate-900/45 p-4 min-h-[260px]'>
-                    <p className='text-xs uppercase tracking-[0.14em] text-slate-400'>
-                      How Data Is Used
-                    </p>
-                    <div className='mt-3 max-h-52 overflow-y-auto pr-1'>
-                      {activeUsageLabels.length === 0 ? (
-                        <p className='text-xs text-slate-400'>
-                          No active usage flags surfaced.
-                        </p>
-                      ) : (
-                        <ul className='space-y-1.5'>
-                          {activeUsageLabels.map((label) => (
-                            <li
-                              key={`${profile.domain}-${label}`}
-                              className='rounded-xl border border-amber-300/45 bg-amber-300/12 px-2.5 py-1.5 text-xs text-amber-100'>
-                              {label}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </section>
+                  <div className='flex h-[190px] flex-col gap-2'>
+                    <section className='flex basis-[65%] min-h-0 flex-col rounded-2xl border border-slate-600/50 bg-slate-900/45 p-4'>
+                      <p className='text-xs uppercase tracking-[0.14em] text-slate-400'>
+                        How Data Is Used
+                      </p>
+                      <div className='mt-2 min-h-0 flex-1 overflow-y-auto pr-1'>
+                        {activeUsageLabels.length === 0 ? (
+                          <p className='text-xs text-slate-400'>
+                            No active usage flags surfaced.
+                          </p>
+                        ) : (
+                          <ul className='flex flex-wrap gap-1.5'>
+                            {activeUsageLabels.map((label) => (
+                              <li
+                                key={`${profile.domain}-${label}`}
+                                className='inline-flex max-w-full rounded-lg border border-amber-300/45 bg-amber-300/12 px-2 py-1 text-[11px] leading-tight text-amber-100'>
+                                {label}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className='flex basis-[35%] min-h-0 flex-col rounded-xl border border-slate-700/60 bg-slate-950/35 p-2.5 text-sm text-slate-200'>
+                      <p className='flex items-center justify-between gap-2'>
+                        <span className='text-slate-300'>Retention Duration</span>
+                        <span className='font-semibold'>{retentionDuration}</span>
+                      </p>
+                      <p className='mt-1.5 flex items-center justify-between gap-2'>
+                        <span className='text-slate-300'>Vague Retention language</span>
+                        <span className='font-semibold'>{vagueRetentionLanguage}</span>
+                      </p>
+                    </section>
+                  </div>
                 </div>
 
-                <div className='grid content-start gap-2 text-xs text-slate-300 lg:justify-items-end lg:pt-1'>
-                  <div className='w-full max-w-[220px] rounded-xl border border-slate-700/60 bg-slate-950/35 p-2.5 text-[11px] text-slate-200'>
-                    <p className='flex items-center justify-between gap-2'>
-                      <span className='text-slate-400'>Retention duration</span>
-                      <span className='font-semibold'>{retentionDuration}</span>
-                    </p>
-                    <p className='mt-1.5 flex items-center justify-between gap-2'>
-                      <span className='text-slate-400'>Vague retention language</span>
-                      <span className='font-semibold'>{vagueRetentionLanguage}</span>
-                    </p>
-                  </div>
+                <div className='flex h-[190px] flex-col justify-center gap-3 text-xs text-slate-300 lg:items-end lg:pt-1'>
                   <button
                     type='button'
                     onClick={() => openRedFlagsModal(profile)}
@@ -578,7 +602,7 @@ export default function Options(): JSX.Element {
                   <button
                     type='button'
                     onClick={() => openSitePermissionsSettings(profile.domain)}
-                    className='noir-settings-btn w-full max-w-[220px]'>
+                    className='noir-settings-btn !mt-0 w-full max-w-[220px]'>
                     Manage Permissions
                   </button>
                 </div>
@@ -611,9 +635,9 @@ export default function Options(): JSX.Element {
               <p className='hero-kicker'>Privasee | Urban Noir</p>
               <h1 className='hero-title'>Night-city privacy command center</h1>
               <p className='hero-body'>
-                Built for your hackathon theme: rain-slick streets, neon contrast,
-                and sharp risk visibility. Each app card is now populated from your
-                Chrome usage data with actionable links into permissions settings.
+                Clear insights into what data you share, how it&apos;s used, and
+                your real-time privacy risk - so every &ldquo;I Agree&rdquo;
+                becomes &ldquo;I Understand.&rdquo;
               </p>
 
               <div className='noir-jump-list'>
@@ -715,8 +739,7 @@ export default function Options(): JSX.Element {
 
           <div className='mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
             <p className='text-xs uppercase tracking-[0.14em] text-slate-400'>
-              Source: Chrome history (last 12 months){' '}
-              {isLoadingProfiles ? '• syncing' : '• live'}
+              Source: Chrome history
             </p>
             <button
               type='button'
@@ -735,19 +758,6 @@ export default function Options(): JSX.Element {
             </p>
           ) : null}
 
-          <div className='mt-4 flex flex-wrap gap-2'>
-            {summary.topFields.length > 0 ? (
-              summary.topFields.map(([field, count]) => (
-                <span key={field} className='noir-top-chip'>
-                  {field} ({count})
-                </span>
-              ))
-            ) : (
-              <span className='noir-top-chip'>
-                Identifier trends appear here after sync
-              </span>
-            )}
-          </div>
         </section>
 
         <section

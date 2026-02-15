@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -27,6 +28,17 @@ def _cache_key_for_urls(urls: list[str]) -> str:
     domains = sorted({get_domain(u) for u in urls if u.strip()})
     key = "|".join(domains) if domains else "no_domain"
     return f"{TOS_CACHE_PREFIX}{key}"
+
+
+def _normalize_domain_input(raw_domain: str) -> str:
+    """Normalize host/subdomain input to a registered root domain."""
+    candidate = raw_domain.strip()
+    if not candidate:
+        return ""
+    if "://" not in candidate:
+        candidate = f"https://{candidate}"
+    normalized = get_domain(candidate)
+    return normalized or raw_domain.strip().lower()
 
 
 def _policies_with_headings(pages: dict[str, str]) -> list[str]:
@@ -85,6 +97,55 @@ async def _run_process_and_cache(urls: list[str]) -> None:
 def tos_processor_get() -> dict[str, str]:
     """Return the dictionary of url -> page text from the last successful POST."""
     return _fetched_pages
+
+
+@router.get("/cached")
+def tos_processor_get_cached_by_domain(
+    domain: list[str] = Query(
+        ...,
+        description="Domain(s) to look up in cache; accepts hostnames or URLs",
+    )
+) -> dict[str, Any]:
+    """
+    Return cached analyses for the provided domains only.
+    This checks Valkey keys using the pattern: ``tos:process:<domain>`` and
+    does not trigger background processing for cache misses.
+    """
+    normalized_domains = sorted({
+        normalized
+        for d in domain
+        if d.strip() and (normalized := _normalize_domain_input(d))
+    })
+    if not normalized_domains:
+        raise HTTPException(status_code=400, detail="At least one domain is required")
+
+    matched: dict[str, dict[str, Any]] = {}
+    missing: list[str] = []
+
+    for d in normalized_domains:
+        key = f"{TOS_CACHE_PREFIX}{d}"
+        try:
+            cached = get_json(key, PolicyAnalysis)
+        except Exception as e:
+            logger.warning("Cache lookup failed for %s: %s", key, e)
+            cached = None
+
+        if cached is None:
+            missing.append(d)
+            continue
+
+        payload = cached.model_dump()
+        payload = _enrich_with_top_risks(payload, [f"https://{d}"])
+        matched[d] = payload
+
+    return {
+        "prefix": TOS_CACHE_PREFIX,
+        "requested_count": len(normalized_domains),
+        "matched_count": len(matched),
+        "missing_count": len(missing),
+        "matched": matched,
+        "missing": missing,
+    }
 
 
 @router.get("/process")
@@ -156,4 +217,3 @@ async def tos_processor_root(
             "message": "Analysis started in background. Call this endpoint again with the same URLs to retrieve the result.",
         },
     )
-
