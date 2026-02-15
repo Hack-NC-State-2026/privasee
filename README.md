@@ -188,7 +188,7 @@ So: **HSET** = reference table; **ZSET** = per-site ranking; **SET** = full anal
 
 ### RDB persistence
 
-If Valkey is configured with save rules in `valkey.conf` (e.g. `save 3600 1`, `save 300 100`, `save 60 10000`), it periodically forks and writes the **entire dataset** to a `dump.rdb` file on disk. On restart, it loads `dump.rdb` back into memory—so the severity map, all cached analyses, and all per-domain ZSETs survive a restart. RDB is **all-or-nothing**: every key in memory is included in the snapshot; there is no way to persist only certain keys.
+Our Valkey is configured with save rules in `valkey.conf` (e.g. `save 3600 1`, `save 300 100`, `save 60 10000`), it periodically forks and writes the **entire dataset** to a `dump.rdb` file on disk. On restart, it loads `dump.rdb` back into memory—so the severity map, all cached analyses, and all per-domain ZSETs survive a restart. RDB is **all-or-nothing**: every key in memory is included in the snapshot; there is no way to persist only certain keys.
 
 This matters because the permanent data (HSET, ZSET, SET caches) is expensive to rebuild (Gemini API calls). RDB ensures a Valkey restart doesn’t wipe them. Sessions, which are short-lived with TTL, would expire anyway; they are just included in the snapshot. If RDB were disabled (`save ""`), the app would still run (Python falls back to `DEFAULT_ATTRIBUTE_SEVERITY`), but every domain would need to be re-processed from scratch after a restart.
 
