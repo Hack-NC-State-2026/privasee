@@ -42,5 +42,15 @@ export default function createShadowRoot(styles: string) {
   }
 
   document.body.appendChild(host);
+
+  // Keep host as the last child so extension UI stays above late-mounted modals.
+  const observer = new MutationObserver(() => {
+    if (!document.body || !host.isConnected) return;
+    if (document.body.lastElementChild !== host) {
+      document.body.appendChild(host);
+    }
+  });
+  observer.observe(document.body, { childList: true });
+
   return createRoot(mount);
 }
