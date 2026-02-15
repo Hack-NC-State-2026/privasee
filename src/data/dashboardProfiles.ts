@@ -9,6 +9,17 @@ export type PrivacyMetricKey =
 
 export type PrivacyMetricSet = Record<PrivacyMetricKey, number>;
 
+export type DataUsageStatus = 'true' | 'false' | 'not_found' | 'unknown';
+
+export type DataUsageValue = DataUsageStatus | boolean | string | null | undefined;
+
+export type DataUsageProfile = Record<string, DataUsageValue>;
+
+export type RedFlagItem = {
+  cause: string;
+  severity: string;
+};
+
 export type WebsiteProfile = {
   domain: string;
   name: string;
@@ -18,6 +29,14 @@ export type WebsiteProfile = {
   sharedData: string[];
   permissions: string[];
   riskSignals: string[];
+  personalIdentifiers?: string[];
+  dataUsage?: DataUsageProfile;
+  retentionSummary?: string;
+  retentionDuration?: string;
+  vagueRetentionLanguage?: boolean | null;
+  userRights?: string[];
+  topRiskAttributes?: string[];
+  redFlags?: RedFlagItem[];
   privacyScore: number;
   posture: DataManagementLevel;
   verdict: string;

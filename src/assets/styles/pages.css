@@ -336,6 +336,53 @@ body {
   border-color: rgba(255, 157, 56, 0.55);
 }
 
+.noir-settings-btn {
+  margin-top: 6px;
+  border: 1px solid rgba(79, 228, 255, 0.58);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: linear-gradient(
+    120deg,
+    rgba(26, 43, 70, 0.9),
+    rgba(18, 104, 123, 0.44)
+  );
+  color: var(--noir-text-primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  transition: all 180ms ease;
+}
+
+.noir-settings-btn:hover {
+  border-color: rgba(142, 241, 255, 0.85);
+  box-shadow: 0 8px 22px rgba(3, 10, 19, 0.35);
+  transform: translateY(-1px);
+}
+
+.noir-redflags-btn {
+  border: 1px solid rgba(255, 151, 173, 0.58);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: linear-gradient(
+    120deg,
+    rgba(69, 29, 52, 0.9),
+    rgba(109, 40, 76, 0.55)
+  );
+  color: var(--noir-text-primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  transition: all 180ms ease;
+}
+
+.noir-redflags-btn:hover {
+  border-color: rgba(255, 197, 212, 0.82);
+  box-shadow: 0 8px 22px rgba(3, 10, 19, 0.35);
+  transform: translateY(-1px);
+}
+
 .city-window {
   position: relative;
   overflow: hidden;

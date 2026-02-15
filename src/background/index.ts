@@ -43,10 +43,20 @@ type FetchTosEnrichedMessage = {
   payload?: { urls: string[] };
 };
 
+type GetChromeHistoryMessage = {
+  type: 'GET_CHROME_HISTORY';
+  payload?: {
+    text?: string;
+    startTime?: number;
+    maxResults?: number;
+  };
+};
+
 type RuntimeMessage =
   | OpenPanelMessage
   | GetInsightMessage
   | FetchTosEnrichedMessage
+  | GetChromeHistoryMessage
   | { type?: string };
 
 type OverlaySummaryAttribute = {
@@ -805,6 +815,37 @@ chrome.runtime.onMessage.addListener(
           }
         }
       })();
+      return true;
+    }
+
+    if (message.type === 'GET_CHROME_HISTORY') {
+      const payload =
+        'payload' in message ? (message as GetChromeHistoryMessage).payload : undefined;
+
+      if (!chrome.history?.search) {
+        sendResponse({
+          ok: false,
+          error: 'History API unavailable in background context.',
+        });
+        return undefined;
+      }
+
+      chrome.history.search(
+        {
+          text: payload?.text ?? '',
+          startTime: payload?.startTime,
+          maxResults: payload?.maxResults,
+        },
+        (items) => {
+          const { lastError } = chrome.runtime;
+          if (lastError) {
+            sendResponse({ ok: false, error: lastError.message });
+            return;
+          }
+          sendResponse({ ok: true, items: items ?? [] });
+        }
+      );
+
       return true;
     }
 

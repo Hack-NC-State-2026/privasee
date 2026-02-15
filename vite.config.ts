@@ -34,7 +34,6 @@ export function touchGlobalCSSPlugin({
 
 const chromeSpecificManifest = {
   options_page: 'src/options/index.html',
-  permissions: ['activeTab', 'storage'],
   background: {
     service_worker: 'src/background/index.ts',
     type: 'module',
