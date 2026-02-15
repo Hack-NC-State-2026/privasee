@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.api.tos_processor.chain import _extract_terms_and_privacy_risks
 from app.api.tos_processor.models import PolicyAnalysis
 from app.queries import get_json, set_json
+from app.severity_store import collect_attributes_from_data_collection, set_site_attributes
 from app.utils.fetch_page import fetch_page_content
 from app.utils.url_utils import get_domain
 
@@ -49,6 +50,14 @@ async def _run_process_and_cache(urls: list[str]) -> None:
         cache_key = _cache_key_for_urls(urls)
         set_json(cache_key, extraction)
         logger.info("Cached TOS analysis for %d URLs under key %s", len(urls), cache_key)
+
+        # Store per-domain attributes sorted by severity in Valkey (ZSET)
+        data_collection = extraction.get("data_collection", {})
+        found_attrs = collect_attributes_from_data_collection(data_collection)
+        domains = {get_domain(u) for u in urls if u.strip()}
+        for domain in domains:
+            set_site_attributes(domain, found_attrs)
+        logger.info("Stored %d attributes for %d domain(s)", len(found_attrs), len(domains))
     except Exception as e:
         logger.exception("Background TOS process failed: %s", e)
 

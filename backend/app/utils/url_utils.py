@@ -1,15 +1,18 @@
 """URL parsing utilities."""
 
-from urllib.parse import urlparse
+import tldextract
 
 
 def get_domain(url: str) -> str:
     """
-    Return the domain (hostname) from a URL, without port or path.
+    Return the registered (root) domain from a URL, stripping subdomains.
     Examples:
-        https://example.com/path -> example.com
-        https://sub.example.com:443/ -> sub.example.com
+        https://example.com/path          -> example.com
+        https://policies.google.com/terms -> google.com
+        https://myactivity.google.com     -> google.com
+        https://sub.example.co.uk:443/    -> example.co.uk
     """
-    parsed = urlparse(url)
-    netloc = parsed.netloc or parsed.path.split("/")[0]
-    return netloc.split(":")[0].strip() or ""
+    ext = tldextract.extract(url)
+    if ext.domain and ext.suffix:
+        return f"{ext.domain}.{ext.suffix}"
+    return ext.domain or ""
