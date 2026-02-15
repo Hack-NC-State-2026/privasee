@@ -174,62 +174,62 @@ class PersonalIdentifiersCollected(BaseModel):
     """PII types the policy says are collected. Only use values from PIIType."""
     types: List[PIIType] = Field(default_factory=list, description="PII types collected")
     evidence: str = Field("", description="Quoted evidence from the document")
-    explanation: str = Field("", description="Brief explanation of privacy risk or significance of collecting this PII")
-    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. limit shared fields, use alias)")
+    explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
+    mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
 
 
 class DeviceDataCollected(BaseModel):
     """Device/technical data types collected. Only use values from DeviceDataType."""
     types: List[DeviceDataType] = Field(default_factory=list, description="Device data types collected")
     evidence: str = Field("", description="Quoted evidence from the document")
-    explanation: str = Field("", description="Brief explanation of privacy risk or significance of this device data collection")
-    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. disable tracking, use privacy-focused browser)")
+    explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
+    mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
 
 
 class LocationDataCollected(BaseModel):
     """Location data types collected. Only use values from LocationType."""
     types: List[LocationType] = Field(default_factory=list, description="Location data types collected")
     evidence: str = Field("", description="Quoted evidence from the document")
-    explanation: str = Field("", description="Brief explanation of privacy risk or significance of location collection")
-    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. deny or limit location permission)")
+    explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
+    mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
 
 
 class UserContentCollected(BaseModel):
     """User-generated content types collected. Only use values from UserContentType."""
     types: List[UserContentType] = Field(default_factory=list, description="User content types collected")
     evidence: str = Field("", description="Quoted evidence from the document")
-    explanation: str = Field("", description="Brief explanation of privacy risk or significance of user content collection")
-    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. minimize shared content, use separate account)")
+    explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
+    mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
 
 
 class ThirdPartyDataCollected(BaseModel):
     """Third-party source types from which data is obtained. Only use values from ThirdPartySourceType."""
     types: List[ThirdPartySourceType] = Field(default_factory=list, description="Third-party source types")
     evidence: str = Field("", description="Quoted evidence from the document")
-    explanation: str = Field("", description="Brief explanation of privacy risk or significance of third-party data sources")
-    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. opt out of sharing, block third-party cookies)")
+    explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
+    mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
 
 
 class SensitiveDataCollected(BaseModel):
     """Sensitive/special category data. Only use values from SensitiveCategoryType."""
     types: List[SensitiveCategoryType] = Field(default_factory=list, description="Sensitive categories collected")
     evidence: str = Field("", description="Quoted evidence from the document")
-    explanation: str = Field("", description="Brief explanation of privacy risk or significance of sensitive category collection")
-    mitigation: str = Field("", description="Practical steps users can take to limit exposure (e.g. avoid providing if optional, use privacy controls)")
+    explanation: str = Field("", description="Why this matters for privacy; max 15 words for popup readability")
+    mitigation: str = Field("", description="Practical steps to limit exposure; max 15 words for popup readability")
 
 
 class Signal(BaseModel):
     """A single extracted signal: found/not_found/unknown + evidence quote."""
     status: str = Field(..., description="One of: true, false, not_found, unknown")
     evidence: str = Field("", description="Direct quoted language from the document, or empty")
-    explanation: str = Field("", description="Brief explanation of privacy risk or significance when used in data collection; optional elsewhere")
-    mitigation: str = Field("", description="Practical steps users can take to limit exposure when used in data collection; optional elsewhere")
+    explanation: str = Field("", description="Max 15 words when used in data collection; optional elsewhere")
+    mitigation: str = Field("", description="Max 15 words when used in data collection; optional elsewhere")
 
 
 class RedFlag(BaseModel):
     clause: str = Field(..., description="The problematic clause text")
     severity: str = Field(..., description="One of: low, medium, high")
-    explanation: str = Field(..., description="Why this is a red flag")
+    explanation: str = Field(..., description="Why this is a red flag; max 15 words for popup readability")
 
 
 # ---------------------------
@@ -281,7 +281,7 @@ class RetentionSection(BaseModel):
     retention_duration: str = Field(..., description="Normalized: indefinite, P2Y, case_by_case, unknown, etc.")
     retention_explanation: str = Field(
         "",
-        description="Overlay-ready paragraph: implications of retention (e.g. how long, indefinite?), whether retention language is vague, and what users can do (e.g. request deletion, export).",
+        description="Overlay-ready; max 15 words: implications, vagueness, and what users can do (e.g. request deletion).",
     )
     deletion_rights: Signal
     vague_retention_language: Signal
@@ -306,7 +306,7 @@ class ScoreSection(BaseModel):
     posture: str = Field(..., description="One of: low_risk, moderate_risk, high_risk, unknown")
     posture_explanation: str = Field(
         "",
-        description="Brief explanation of why this posture/risk level was assigned (e.g. why high_risk)",
+        description="Why this posture was assigned; max 15 words for popup readability",
     )
     data_minimization: float = Field(..., description="Score 0-100")
     retention_transparency: float = Field(..., description="Score 0-100")

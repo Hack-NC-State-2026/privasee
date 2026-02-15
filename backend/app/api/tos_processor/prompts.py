@@ -59,6 +59,8 @@ Your task is to extract structured legal and privacy risk signals from one or mo
 
 This is NOT a summary task.
 
+CRITICAL for popup readability: Every user-facing text (explanation, mitigation, retention_explanation, posture_explanation) must be at most 15 words. Users see these in a small overlay and must grasp the risk in an instant. Be concise.
+
 You must:
 • Extract structured risk-relevant clauses
 • Quote direct evidence
@@ -94,8 +96,8 @@ Extract exact phrases found.
 
 For retention:
 • Normalize retention_duration into: "indefinite", ISO 8601 if exact (e.g. "P2Y"), "case_by_case", "unknown".
-• Always fill "retention_explanation": one short overlay-ready paragraph that (1) states the implications (e.g. data kept indefinitely, or case-by-case so unclear), (2) says whether retention language is vague and why that matters, (3) says what users can do (e.g. request deletion via My Activity, delete account, or that options are limited). Example: "Data may be kept indefinitely or case-by-case; language is vague ('as long as necessary'). You can request deletion via My Activity or delete your Google Account."
-• For deletion_rights and vague_retention_language, always fill "explanation" (what this means for the user and what they can do) and "mitigation" (concrete steps if any). Do not leave explanation or mitigation empty for retention sub-fields.
+• Always fill "retention_explanation" in at most 15 words: implications (e.g. kept indefinitely), whether language is vague, and what users can do. Example: "Data may be kept indefinitely or case-by-case; language is vague ('as long as necessary'). You can request deletion via My Activity or delete your Google Account."
+• For deletion_rights and vague_retention_language, always fill "explanation" (what this means for the user and what they can do) and "mitigation" (concrete steps if any) in at most 15 words each. Do not leave explanation or mitigation empty for retention sub-fields.
 
 For rights:
 Explicitly detect:
@@ -114,16 +116,13 @@ For data collection, every field (including ip_address) must include "explanatio
 • third_party_data.types: social_media, advertisers, analytics, data_brokers, affiliates
 • sensitive_data.types: health, biometric, genetic, political, religious, sexual_orientation, union_membership, criminal
 
-For each data collection category include "evidence" (short quoted excerpt), "explanation" (why this collection matters for privacy), and "mitigation" (practical user-facing steps to reduce risk, e.g. deny location, use alias email, opt out of ads). Use empty list [] for types when not mentioned.
+For each data collection category include "evidence" (short quoted excerpt), "explanation" (why this matters for privacy, max 15 words), and "mitigation" (practical steps to reduce risk, max 15 words). Use empty list [] for types when not mentioned.
 
 For sensitive data red flags:
 Detect references to: biometric, health, precise location, children, political, religious, sexual orientation
 
 For red flags:
-Assign severity:
-• low
-• medium
-• high
+Assign severity: low, medium, high. Keep "explanation" to at most 15 words (why it's a red flag).
 
 Do not compute subjective commentary.
 Do not summarize.
@@ -131,7 +130,7 @@ Do not interpret beyond written language.
 
 Scoring fields must be rule-based from extracted signals only.
 
-For the scores section, include "posture_explanation": a short explanation of why the overall posture (low_risk, moderate_risk, high_risk) was assigned, based on the extracted signals (e.g. "High risk due to broad data collection, indefinite retention, and mandatory arbitration.").
+For the scores section, include "posture_explanation" in at most 15 words: why the posture (low_risk, moderate_risk, high_risk) was assigned (e.g. "Broad data collection, indefinite retention, mandatory arbitration.").
 
 The policies are below:
 

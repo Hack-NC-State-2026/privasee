@@ -923,7 +923,7 @@ export default function Content(): JSX.Element {
             </article>
           ) : null}
 
-          <article className='privasee-info-card'>
+          <article className='privasee-info-card privasee-retention-panel'>
             <h3 className='privasee-subtitle'>
               Data Retention Policy
             </h3>
@@ -932,13 +932,16 @@ export default function Content(): JSX.Element {
             </p>
           </article>
 
-          <article className='privasee-info-card'>
+          <article className='privasee-info-card privasee-action-panel'>
             <h3 className='privasee-subtitle'>
               Action Items You Can Take Now
             </h3>
             <ul className='privasee-action-list'>
-              {recommendations.map((item) => (
-                <li key={item}>{item}</li>
+              {recommendations.map((item, index) => (
+                <li key={item} className='privasee-action-item'>
+                  <span className='privasee-action-index'>{index + 1}</span>
+                  <span>{item}</span>
+                </li>
               ))}
             </ul>
           </article>
