@@ -776,42 +776,6 @@ export default function Content(): JSX.Element {
     return <div id='my-ext' className='privasee-shell' data-theme='dark' />;
   }
 
-  const riskLevel = insight?.riskLevel ?? 'unknown';
-  const riskBadgeConfig: Record<
-    RiskLevel,
-    {
-      label: string;
-      badgeClassName: string;
-      tileClassName: string;
-      titleClassName: string;
-    }
-  > = {
-    high: {
-      label: 'Critical Exposure',
-      badgeClassName: 'is-high',
-      tileClassName: 'is-high',
-      titleClassName: 'is-high',
-    },
-    medium: {
-      label: 'Watch List',
-      badgeClassName: 'is-watch',
-      tileClassName: 'is-watch',
-      titleClassName: 'is-watch',
-    },
-    low: {
-      label: 'Lower Risk',
-      badgeClassName: 'is-stable',
-      tileClassName: 'is-stable',
-      titleClassName: 'is-stable',
-    },
-    unknown: {
-      label: 'Risk Assessment In Progress',
-      badgeClassName: 'is-unknown',
-      tileClassName: 'is-unknown',
-      titleClassName: 'is-unknown',
-    },
-  };
-
   const fallbackConcerns: InsightItem[] = [
     {
       title: 'Sharing details may be broad',
@@ -827,8 +791,6 @@ export default function Content(): JSX.Element {
   const keyConcerns =
     rawConcerns.length > 0 ? rawConcerns.slice(0, 3) : fallbackConcerns;
 
-  const likelyData = insight?.likelyDataCollected ?? [];
-
   const fallbackRecommendations = [
     'Use a dedicated email alias for this signup.',
     'Review privacy settings as soon as account creation is complete.',
@@ -836,6 +798,7 @@ export default function Content(): JSX.Element {
   const recommendations = insight?.recommendations?.length
     ? insight.recommendations
     : fallbackRecommendations;
+  const actionItems = recommendations.slice(0, 2);
 
   const retentionSummary =
     insight?.retentionSummary ||
@@ -844,8 +807,7 @@ export default function Content(): JSX.Element {
   const summaryText =
     insight?.summary ||
     'We are still processing policy links for a complete risk assessment.';
-
-  const badgeConfig = riskBadgeConfig[riskLevel];
+  const sharedDataItems = keyConcerns.slice(0, 3);
 
   return (
     <div id='my-ext' className='privasee-shell' data-theme='dark'>
@@ -862,6 +824,15 @@ export default function Content(): JSX.Element {
         className='privasee-popover-enter privasee-popover-pulse privasee-overlay pointer-events-auto fixed z-[2147483647]'
         style={popoverStyle}
       >
+        <button
+          type='button'
+          aria-label='Dismiss'
+          className='privasee-close-btn'
+          onClick={dismissForSession}
+        >
+          ×
+        </button>
+
         <header className='privasee-header'>
           <div className='privasee-kicker-row'>
             <span className='privasee-kicker-dot' />
@@ -869,15 +840,8 @@ export default function Content(): JSX.Element {
           </div>
 
           <div>
-            <div
-              className={`privasee-risk-pill ${badgeConfig.badgeClassName}`}
-            >
-              {badgeConfig.label}
-            </div>
-
-            <h2 className='privasee-title'>
-              Signup privacy risks for {DOMAIN}
-            </h2>
+            <h2 className='privasee-title'>Privacy Risk Snapshot</h2>
+            <p className='privasee-domain'>{DOMAIN}</p>
             <p className='privasee-summary'>{summaryText}</p>
             {loading ? (
               <p className='privasee-loading'>Refreshing backend analysis...</p>
@@ -886,46 +850,43 @@ export default function Content(): JSX.Element {
         </header>
 
         <section className='privasee-section-stack'>
-          {keyConcerns.map((tile, index) => {
-            const concernToneClass = index < 2 ? 'is-critical' : 'is-medium';
-
-            return (
-              <article
-                key={tile.title}
-                className={`privasee-concern-card ${concernToneClass}`}
-              >
-                <h3
-                  className={`privasee-concern-title ${concernToneClass}`}
+          <article className='privasee-detail-block'>
+            <h3 className='privasee-block-title'>Data Being Shared</h3>
+            <ul className='privasee-data-pills'>
+              {sharedDataItems.map((item, index) => (
+                <li
+                  key={item.title}
+                  className={`privasee-data-pill ${index < 2 ? 'is-critical' : 'is-medium'}`}
                 >
-                  {tile.title}
-                </h3>
+                  {item.title}
+                </li>
+              ))}
+            </ul>
+          </article>
 
-                <p className='privasee-concern-text'>
-                  {tile.details || 'Review this clause in the policy for more details.'}
-                </p>
-              </article>
-            );
-          })}
+          <article className='privasee-detail-block'>
+            <h3 className='privasee-block-title'>Top Concerns</h3>
+            <div className='privasee-concern-list'>
+              {keyConcerns.map((tile, index) => {
+                const concernToneClass = index < 2 ? 'is-critical' : 'is-medium';
 
-          {likelyData.length > 0 ? (
-            <article className='privasee-info-card'>
-              <h3 className='privasee-subtitle'>
-                Likely Data Collected
-              </h3>
-              <ul className='privasee-info-list'>
-                {likelyData.map((item) => (
-                  <li key={item.title} className='privasee-info-item'>
-                    <span className='privasee-info-item-title'>{item.title}:</span>{' '}
-                    {item.details || 'Collected according to policy analysis.'}
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ) : null}
+                return (
+                  <article
+                    key={`${tile.title}-${index}`}
+                    className={`privasee-concern-card ${concernToneClass}`}
+                  >
+                    <p className='privasee-concern-text'>
+                      {tile.details || 'Review this clause in the policy for more details.'}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+          </article>
 
           <article className='privasee-info-card privasee-retention-panel'>
             <h3 className='privasee-subtitle'>
-              Data Retention Policy
+              DATA RENTENTION POLICY
             </h3>
             <p className='privasee-copy'>
               {retentionSummary}
@@ -934,13 +895,13 @@ export default function Content(): JSX.Element {
 
           <article className='privasee-info-card privasee-action-panel'>
             <h3 className='privasee-subtitle'>
-              Action Items You Can Take Now
+              REDUCE EXPOSURE NOW
             </h3>
             <ul className='privasee-action-list'>
-              {recommendations.map((item, index) => (
+              {actionItems.map((item, index) => (
                 <li key={item} className='privasee-action-item'>
-                  <span className='privasee-action-index'>{index + 1}</span>
-                  <span>{item}</span>
+                  <span className='privasee-action-number'>{index + 1}.</span>
+                  <span className='privasee-action-copy'>{item}</span>
                 </li>
               ))}
             </ul>
@@ -948,21 +909,20 @@ export default function Content(): JSX.Element {
         </section>
 
         <footer className='privasee-footer'>
-          <button
-            type='button'
-            className='privasee-btn privasee-btn-primary'
-            onClick={openBrowserSidePanel}
-          >
-            Open Dashboard
-          </button>
+          <div className='privasee-footer-actions'>
+            <button
+              type='button'
+              className='privasee-btn privasee-btn-primary'
+              onClick={openBrowserSidePanel}
+            >
+              Open Dashboard
+            </button>
+          </div>
 
-          <button
-            type='button'
-            className='privasee-btn privasee-btn-secondary'
-            onClick={dismissForSession}
-          >
-            Dismiss
-          </button>
+          <p className='privasee-footer-note'>
+            Open the dashboard to view full clause evidence, all detected risks,
+            and privacy controls.
+          </p>
         </footer>
       </aside>
     </div>

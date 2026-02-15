@@ -122,10 +122,26 @@
 }
 
 .privasee-header {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
+  padding-right: 34px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+}
+
+.privasee-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(146, 165, 195, 0.58);
+  border-radius: 999px;
+  background: rgba(20, 33, 52, 0.88);
+  color: #d5e1f4;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .privasee-kicker-row {
@@ -144,9 +160,9 @@
 
 .privasee-kicker {
   margin: 0;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: #9cf6ff;
 }
@@ -156,10 +172,10 @@
   align-items: center;
   border: 1px solid;
   border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 10px;
+  padding: 5px 11px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
 }
 
@@ -189,49 +205,115 @@
 
 .privasee-title {
   margin: 8px 0 0;
-  font-size: 17px;
+  font-size: 24px;
   font-weight: 900;
-  line-height: 1.18;
-  letter-spacing: 0.04em;
+  line-height: 1.12;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: #e9f1ff;
 }
 
+.privasee-domain {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .privasee-summary {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.46;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   color: #d5e1f4;
 }
 
 .privasee-loading {
-  margin: 5px 0 0;
-  font-size: 11px;
+  margin: 4px 0 0;
+  font-size: 12px;
   color: #adc0da;
 }
 
 .privasee-section-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+}
+
+.privasee-detail-block {
+  padding-top: 12px;
+  border-top: 1px solid rgba(113, 127, 153, 0.46);
+}
+
+.privasee-detail-block:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.privasee-block-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.privasee-data-pills {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.privasee-data-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(113, 127, 153, 0.48);
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.privasee-data-pill::before {
+  content: '•';
+  font-size: 12px;
+  line-height: 1;
+}
+
+.privasee-data-pill.is-critical {
+  border-color: rgba(255, 96, 132, 0.78);
+  color: #ffc4cf;
+}
+
+.privasee-data-pill.is-medium {
+  border-color: rgba(255, 157, 56, 0.46);
+  color: #ffd8a7;
+}
+
+.privasee-concern-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .privasee-concern-card {
-  border: 1px solid var(--noir-panel-border);
-  border-radius: 16px;
-  padding: 11px;
-  background:
-    radial-gradient(circle at 94% -16%, var(--noir-layer-cyan), transparent 45%),
-    var(--noir-panel-flat);
-  transition:
-    transform 180ms ease,
-    box-shadow 180ms ease,
-    border-color 180ms ease;
+  padding-left: 12px;
+  border-left: 2px solid rgba(146, 165, 195, 0.5);
 }
 
 .privasee-concern-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.28);
+  transform: none;
+  box-shadow: none;
 }
 
 .privasee-concern-card.is-high {
@@ -251,33 +333,19 @@
 }
 
 .privasee-concern-card.is-critical {
-  border-color: rgba(255, 96, 132, 0.72);
-  background:
-    radial-gradient(circle at 88% -18%, rgba(255, 120, 145, 0.32), transparent 42%),
-    radial-gradient(circle at 16% 122%, rgba(255, 84, 120, 0.24), transparent 46%),
-    linear-gradient(132deg, rgba(64, 13, 28, 0.95), rgba(46, 10, 21, 0.92));
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 130, 160, 0.18),
-    0 10px 20px rgba(27, 3, 12, 0.36);
+  border-left-color: rgba(255, 96, 132, 0.78);
 }
 
 .privasee-concern-card.is-medium {
-  border-color: rgba(255, 165, 83, 0.7);
-  background:
-    radial-gradient(circle at 90% -10%, rgba(255, 198, 112, 0.28), transparent 40%),
-    radial-gradient(circle at 12% 124%, rgba(255, 142, 62, 0.2), transparent 45%),
-    linear-gradient(132deg, rgba(61, 34, 7, 0.94), rgba(45, 25, 6, 0.9));
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 198, 112, 0.16),
-    0 10px 20px rgba(24, 12, 2, 0.34);
+  border-left-color: rgba(255, 165, 83, 0.76);
 }
 
 .privasee-concern-title {
   margin: 0;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .privasee-concern-title.is-high {
@@ -307,9 +375,9 @@
 }
 
 .privasee-concern-text {
-  margin: 6px 0 0;
-  font-size: 11px;
-  line-height: 1.52;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
   color: #d5e1f4;
 }
 
@@ -335,16 +403,16 @@
 
 .privasee-subtitle {
   margin: 0;
-  font-size: 11px;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: #e9f1ff;
 }
 
 .privasee-copy {
   margin: 8px 0 0;
-  font-size: 11px;
+  font-size: 15px;
   line-height: 1.5;
   color: #d5e1f4;
 }
@@ -359,7 +427,7 @@
 }
 
 .privasee-info-item {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
   color: #d5e1f4;
 }
@@ -370,13 +438,13 @@
 }
 
 .privasee-action-list {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-size: 11px;
+  gap: 0;
+  font-size: 17px;
   line-height: 1.5;
   color: #d5e1f4;
 }
@@ -394,51 +462,72 @@
 
 .privasee-action-item {
   display: grid;
-  grid-template-columns: 20px 1fr;
-  gap: 9px;
+  grid-template-columns: 24px 1fr;
+  gap: 8px;
   align-items: start;
-  border: 1px solid rgba(137, 171, 215, 0.36);
-  border-radius: 12px;
-  padding: 8px 9px;
-  background:
-    radial-gradient(circle at 88% -45%, rgba(79, 228, 255, 0.1), transparent 50%),
-    linear-gradient(134deg, rgba(16, 33, 51, 0.9), rgba(12, 26, 41, 0.9));
+  padding: 10px 2px;
+}
+
+.privasee-action-item + .privasee-action-item {
+  border-top: 1px dashed rgba(113, 127, 153, 0.45);
+}
+
+.privasee-action-copy {
+  display: block;
+}
+
+.privasee-action-number {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #e9f1ff;
 }
 
 .privasee-action-index {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 21px;
+  height: 21px;
   margin-top: 1px;
   border-radius: 999px;
   border: 1px solid rgba(79, 228, 255, 0.5);
   background: rgba(17, 42, 62, 0.9);
   color: #9cf6ff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
 }
 
 .privasee-footer {
-  margin-top: 14px;
+  margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid rgba(113, 127, 153, 0.56);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
+}
+
+.privasee-footer-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.privasee-footer-actions {
+  display: block;
 }
 
 .privasee-btn {
   border: 1px solid;
   border-radius: 999px;
-  padding: 8px 12px;
-  font-size: 11px;
+  padding: 10px 13px;
+  font-size: 13px;
   font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-transform: none;
   cursor: pointer;
   transition:
     transform 180ms ease,
@@ -453,7 +542,10 @@
 .privasee-btn-primary {
   border-color: rgba(79, 228, 255, 0.72);
   background: linear-gradient(102deg, #4fe4ff, #ff9d38, #ff5f7b);
+  width: 100%;
   color: #06101c;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   box-shadow: 0 12px 20px rgba(3, 11, 20, 0.44);
 }
 
@@ -461,6 +553,7 @@
   border-color: rgba(146, 165, 195, 0.58);
   background: rgba(27, 39, 59, 0.98);
   color: #d5e1f4;
+  min-width: 108px;
 }
 
 .privasee-btn-secondary:hover {
@@ -561,12 +654,11 @@
   }
 
   .privasee-title {
-    font-size: 16px;
+    font-size: 20px;
   }
 
-  .privasee-footer {
-    flex-direction: column-reverse;
-    align-items: stretch;
+  .privasee-footer-actions {
+    grid-template-columns: 1fr;
   }
 
   .privasee-btn {
