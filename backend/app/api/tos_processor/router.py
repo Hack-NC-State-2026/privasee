@@ -34,6 +34,25 @@ def _policies_with_headings(pages: dict[str, str]) -> list[str]:
     return [f"Source: {url}\n\n{text.strip()}" for url, text in pages.items()]
 
 
+def _enrich_with_top_risks(payload: dict, urls: list[str]) -> dict:
+    """Attach overlay-summary top-risk data to a cached analysis payload."""
+    # Lazy import to avoid circular dependency (overlay_summary → tos_processor.models)
+    from app.api.overlay_summary import compute_top_risks
+
+    domains = sorted({get_domain(u) for u in urls if u.strip()})
+    if not domains:
+        return payload
+    # Use the first domain for the overlay summary lookup
+    domain = domains[0]
+    try:
+        top_risks = compute_top_risks(domain)
+        payload["overlay_summary"] = top_risks
+        logger.info("Enriched payload with overlay summary: %s", top_risks)
+    except Exception as e:
+        logger.warning("Failed to compute top risks for %s: %s", domain, e)
+    return payload
+
+
 async def _run_process_and_cache(urls: list[str]) -> None:
     """Fetch pages, run extraction, and store result in Valkey. Runs in background."""
     try:
@@ -86,7 +105,14 @@ async def tos_processor_get_process(
         logger.warning("Cache lookup failed: %s", e)
         cached = None
     if cached is not None:
-        return cached.model_dump()
+        payload = cached.model_dump()
+        payload = _enrich_with_top_risks(payload, urls)
+        logger.info(
+            "Returning TOS analysis for overlay (cache_key=%s): %s",
+            cache_key,
+            payload,
+        )
+        return payload
     asyncio.create_task(_run_process_and_cache(urls))
     return JSONResponse(
         status_code=202,
@@ -114,7 +140,14 @@ async def tos_processor_root(
         logger.warning("Cache lookup failed: %s", e)
         cached = None
     if cached is not None:
-        return cached.model_dump()
+        payload = cached.model_dump()
+        payload = _enrich_with_top_risks(payload, urls)
+        logger.info(
+            "Returning TOS analysis for overlay (cache_key=%s): %s",
+            cache_key,
+            payload,
+        )
+        return payload
     asyncio.create_task(_run_process_and_cache(urls))
     return JSONResponse(
         status_code=202,
