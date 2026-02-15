@@ -1,4 +1,11 @@
-import { CSSProperties, JSX, useEffect, useMemo, useState } from 'react';
+import {
+  CSSProperties,
+  JSX,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import {
   dashboardProfiles,
@@ -6,6 +13,7 @@ import {
   metricLabels,
   PrivacyMetricKey,
 } from '@/data/dashboardProfiles';
+import DashboardTour, { DashboardTourStep } from '@/options/DashboardTour';
 import {
   DashboardTheme,
   DEFAULT_DASHBOARD_THEME,
@@ -37,6 +45,49 @@ const jumpTargets = [
   { id: 'signal-lane', label: 'Signal Lane' },
   { id: 'risk-grid', label: 'Risk Cards' },
 ] as const;
+
+const dashboardTourSteps: DashboardTourStep[] = [
+  {
+    id: 'overview',
+    targetId: 'tour-overview',
+    title: 'Command Center Overview',
+    description:
+      'This hero panel sets context, offers jump navigation, and exposes global controls.',
+    reason: 'Fast orientation reduces friction before users start triaging risks.',
+  },
+  {
+    id: 'kpis',
+    targetId: 'tour-kpis',
+    title: 'KPI Snapshot',
+    description:
+      'These metrics summarize account volume, average privacy score, and critical pressure.',
+    reason: 'A high-signal snapshot helps users prioritize without scanning every card.',
+  },
+  {
+    id: 'control',
+    targetId: 'noir-control',
+    title: 'Control Deck',
+    description:
+      'Filters and search let users narrow the dataset by posture and account keywords.',
+    reason: 'Targeted filtering keeps large dashboards actionable during time pressure.',
+  },
+  {
+    id: 'signal',
+    targetId: 'signal-lane',
+    title: 'Signal Lane',
+    description:
+      'This lane ranks the highest exposure accounts first for immediate review.',
+    reason: 'Sorting by urgency supports quick response and reduces missed critical items.',
+  },
+  {
+    id: 'risk-cards',
+    targetId: 'risk-grid',
+    title: 'Risk Cards',
+    description:
+      'Each card shows detailed privacy metrics, shared data, and review timelines.',
+    reason: 'Granular context enables confident account-level decisions and follow-up.',
+  },
+];
 
 const postureStyles: Record<DataManagementLevel, PostureStyle> = {
   excellent: {
@@ -76,6 +127,8 @@ export default function Options(): JSX.Element {
   const [activeFilter, setActiveFilter] = useState<DashboardFilter>('all');
   const [query, setQuery] = useState('');
   const [theme, setTheme] = useState<DashboardTheme>(DEFAULT_DASHBOARD_THEME);
+  const [isTourOpen, setIsTourOpen] = useState(true);
+  const [tourStepIndex, setTourStepIndex] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -99,6 +152,29 @@ export default function Options(): JSX.Element {
       return nextTheme;
     });
   };
+
+  const startTour = useCallback(() => {
+    setTourStepIndex(0);
+    setIsTourOpen(true);
+  }, []);
+
+  const closeTour = useCallback(() => {
+    setIsTourOpen(false);
+  }, []);
+
+  const finishTour = useCallback(() => {
+    setIsTourOpen(false);
+  }, []);
+
+  const goToPreviousTourStep = useCallback(() => {
+    setTourStepIndex((currentIndex) => Math.max(currentIndex - 1, 0));
+  }, []);
+
+  const goToNextTourStep = useCallback(() => {
+    setTourStepIndex((currentIndex) =>
+      Math.min(currentIndex + 1, dashboardTourSteps.length - 1)
+    );
+  }, []);
 
   const summary = useMemo(() => {
     const totalAccounts = dashboardProfiles.length;
@@ -210,7 +286,7 @@ export default function Options(): JSX.Element {
       </div>
 
       <main className='urban-main'>
-        <header className='noir-hero privacy-reveal'>
+        <header id='tour-overview' className='noir-hero privacy-reveal'>
           <div className='noir-hero-grid'>
             <div>
               <p className='hero-kicker'>Privasee | Urban Noir</p>
@@ -231,6 +307,9 @@ export default function Options(): JSX.Element {
                     {item.label}
                   </button>
                 ))}
+                <button type='button' onClick={startTour} className='noir-jump-btn'>
+                  Start Tour
+                </button>
                 <button
                   type='button'
                   onClick={toggleTheme}
@@ -256,7 +335,7 @@ export default function Options(): JSX.Element {
           </div>
         </header>
 
-        <section className='mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
+        <section id='tour-kpis' className='mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
           <article
             className='noir-kpi privacy-reveal'
             style={{ '--delay': '70ms' } as CSSProperties}>
@@ -495,7 +574,7 @@ export default function Options(): JSX.Element {
             })}
           </section>
         ) : (
-          <section className='noir-empty privacy-reveal'>
+          <section id='risk-grid' className='noir-empty privacy-reveal'>
             <p className='text-lg font-semibold text-slate-100'>
               No accounts matched your filters.
             </p>
@@ -505,6 +584,16 @@ export default function Options(): JSX.Element {
           </section>
         )}
       </main>
+
+      <DashboardTour
+        steps={dashboardTourSteps}
+        isOpen={isTourOpen}
+        activeStepIndex={tourStepIndex}
+        onBack={goToPreviousTourStep}
+        onNext={goToNextTourStep}
+        onClose={closeTour}
+        onFinish={finishTour}
+      />
     </div>
   );
 }

@@ -380,7 +380,16 @@ export default function Content(): JSX.Element {
   const seenSessionKey = getSessionKey(SESSION_SEEN_KEY_PREFIX);
 
   const openBrowserSidePanel = useCallback(() => {
-    chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
+    if (chrome.runtime?.openOptionsPage) {
+      chrome.runtime.openOptionsPage();
+      return;
+    }
+
+    window.open(
+      chrome.runtime.getURL('src/options/index.html'),
+      '_blank',
+      'noopener,noreferrer'
+    );
   }, []);
 
   const fetchInsight = useCallback(() => {
@@ -752,45 +761,42 @@ export default function Content(): JSX.Element {
   }, []);
 
   if (!hasIntent || !visible) {
-    return <div id='my-ext' data-theme='light' />;
+    return <div id='my-ext' className='privasee-shell' data-theme='dark' />;
   }
 
   const riskLevel = insight?.riskLevel ?? 'unknown';
   const riskBadgeConfig: Record<
     RiskLevel,
-    { label: string; className: string; tileClassName: string; titleClassName: string }
+    {
+      label: string;
+      badgeClassName: string;
+      tileClassName: string;
+      titleClassName: string;
+    }
   > = {
     high: {
-      label: 'High Risk Detected',
-      className:
-        'bg-red-500/15 text-red-300 ring-1 ring-red-500/30',
-      tileClassName:
-        'border border-red-700 bg-red-950 shadow-[0_0_0_1px_rgba(239,68,68,0.08)]',
-      titleClassName: 'text-red-200',
+      label: 'Critical Exposure',
+      badgeClassName: 'is-high',
+      tileClassName: 'is-high',
+      titleClassName: 'is-high',
     },
     medium: {
-      label: 'Moderate Risk Detected',
-      className:
-        'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30',
-      tileClassName:
-        'border border-amber-700 bg-amber-950 shadow-[0_0_0_1px_rgba(245,158,11,0.08)]',
-      titleClassName: 'text-amber-200',
+      label: 'Watch List',
+      badgeClassName: 'is-watch',
+      tileClassName: 'is-watch',
+      titleClassName: 'is-watch',
     },
     low: {
-      label: 'Lower Risk Detected',
-      className:
-        'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30',
-      tileClassName:
-        'border border-emerald-700 bg-emerald-950 shadow-[0_0_0_1px_rgba(16,185,129,0.08)]',
-      titleClassName: 'text-emerald-200',
+      label: 'Lower Risk',
+      badgeClassName: 'is-stable',
+      tileClassName: 'is-stable',
+      titleClassName: 'is-stable',
     },
     unknown: {
       label: 'Risk Assessment In Progress',
-      className:
-        'bg-zinc-500/15 text-zinc-300 ring-1 ring-zinc-500/30',
-      tileClassName:
-        'border border-zinc-700 bg-zinc-900 shadow-[0_0_0_1px_rgba(113,113,122,0.08)]',
-      titleClassName: 'text-zinc-200',
+      badgeClassName: 'is-unknown',
+      tileClassName: 'is-unknown',
+      titleClassName: 'is-unknown',
     },
   };
 
@@ -829,119 +835,110 @@ export default function Content(): JSX.Element {
   const badgeConfig = riskBadgeConfig[riskLevel];
 
   return (
-    <div id='my-ext' data-theme='dark'>
-      {/* Cinematic Backdrop */}
+    <div id='my-ext' className='privasee-shell' data-theme='dark'>
       <div
         aria-hidden='true'
-        className='privasee-cinematic-backdrop pointer-events-none fixed inset-0 z-[2147483646]'
+        className='privasee-cinematic-backdrop privasee-backdrop pointer-events-none fixed inset-0 z-[2147483646]'
         style={spotlightVars}
       />
-  
-      {/* Popover */}
+
       <aside
         ref={overlayRef}
         role='dialog'
         aria-label='Signup privacy insight'
-        className='privasee-popover-enter privasee-popover-pulse pointer-events-auto fixed z-[2147483647] w-[420px] max-w-[calc(100vw-1.5rem)] rounded-3xl border border-zinc-800/80 bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 p-5 text-zinc-100 shadow-[0_25px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl'
+        className='privasee-popover-enter privasee-popover-pulse privasee-overlay pointer-events-auto fixed z-[2147483647]'
         style={popoverStyle}
       >
-        {/* Header */}
-        <header className='mb-5 flex flex-col gap-3'>
-          <div className='flex items-center gap-2'>
-            <div className='h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)]' />
-            <span className='text-xs font-medium uppercase tracking-widest text-zinc-400'>
-              Privasee
-            </span>
+        <header className='privasee-header'>
+          <div className='privasee-kicker-row'>
+            <span className='privasee-kicker-dot' />
+            <span className='privasee-kicker'>Privasee Noir</span>
           </div>
-  
+
           <div>
             <div
-              className={`mb-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${badgeConfig.className}`}
+              className={`privasee-risk-pill ${badgeConfig.badgeClassName}`}
             >
               {badgeConfig.label}
             </div>
-  
-            <h2 className='text-lg font-bold tracking-tight text-zinc-50'>
+
+            <h2 className='privasee-title'>
               Signup privacy risks for {DOMAIN}
             </h2>
-            <p className='mt-2 text-xs leading-5 text-zinc-300'>{summaryText}</p>
+            <p className='privasee-summary'>{summaryText}</p>
             {loading ? (
-              <p className='mt-1 text-xs text-zinc-400'>Refreshing backend analysis...</p>
+              <p className='privasee-loading'>Refreshing backend analysis...</p>
             ) : null}
           </div>
         </header>
-  
-        {/* Content */}
-        <section className='space-y-4'>
+
+        <section className='privasee-section-stack'>
           {keyConcerns.map((tile) => (
-            <div
+            <article
               key={tile.title}
-              className={`group relative overflow-hidden rounded-2xl p-4 transition-all duration-200 hover:-translate-y-[2px] hover:shadow-lg ${badgeConfig.tileClassName}`}
+              className={`privasee-concern-card ${badgeConfig.tileClassName}`}
             >
               <h3
-                className={`text-sm font-semibold tracking-wide ${badgeConfig.titleClassName}`}
+                className={`privasee-concern-title ${badgeConfig.titleClassName}`}
               >
                 {tile.title}
               </h3>
-  
-              <p className='mt-2 text-xs leading-5 text-zinc-300'>
+
+              <p className='privasee-concern-text'>
                 {tile.details || 'Review this clause in the policy for more details.'}
               </p>
-            </div>
+            </article>
           ))}
 
           {likelyData.length > 0 ? (
-            <div className='rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 backdrop-blur-md'>
-              <h3 className='text-sm font-semibold text-zinc-100'>
+            <article className='privasee-info-card'>
+              <h3 className='privasee-subtitle'>
                 Likely Data Collected
               </h3>
-              <ul className='mt-3 space-y-2 text-xs leading-5 text-zinc-300'>
+              <ul className='privasee-info-list'>
                 {likelyData.map((item) => (
-                  <li key={item.title}>
-                    <span className='font-semibold text-zinc-200'>{item.title}:</span>{' '}
+                  <li key={item.title} className='privasee-info-item'>
+                    <span className='privasee-info-item-title'>{item.title}:</span>{' '}
                     {item.details || 'Collected according to policy analysis.'}
                   </li>
                 ))}
               </ul>
-            </div>
+            </article>
           ) : null}
-  
-          {/* Data Retention */}
-          <div className='rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 backdrop-blur-md'>
-            <h3 className='text-sm font-semibold text-zinc-100'>
+
+          <article className='privasee-info-card'>
+            <h3 className='privasee-subtitle'>
               Data Retention Policy
             </h3>
-            <p className='mt-2 text-xs leading-5 text-zinc-300'>
+            <p className='privasee-copy'>
               {retentionSummary}
             </p>
-          </div>
-  
-          {/* Action Items */}
-          <div className='rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 backdrop-blur-md'>
-            <h3 className='text-sm font-semibold text-zinc-100'>
+          </article>
+
+          <article className='privasee-info-card'>
+            <h3 className='privasee-subtitle'>
               Action Items You Can Take Now
             </h3>
-            <ul className='mt-3 list-disc space-y-2 pl-5 text-xs leading-5 text-zinc-300'>
+            <ul className='privasee-action-list'>
               {recommendations.map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
-          </div>
+          </article>
         </section>
-  
-        {/* Footer */}
-        <footer className='mt-5 flex items-center justify-between gap-3 border-t border-zinc-800 pt-4'>
+
+        <footer className='privasee-footer'>
           <button
             type='button'
-            className='btn btn-sm min-h-10 rounded-xl border-0 bg-gradient-to-r from-amber-500 to-orange-500 px-4 text-sm font-semibold text-black shadow-lg transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400'
+            className='privasee-btn privasee-btn-primary'
             onClick={openBrowserSidePanel}
           >
-            Open details
+            Open Dashboard
           </button>
-  
+
           <button
             type='button'
-            className='btn btn-sm min-h-10 rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 text-sm text-zinc-200 transition-all hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400'
+            className='privasee-btn privasee-btn-secondary'
             onClick={dismissForSession}
           >
             Dismiss
