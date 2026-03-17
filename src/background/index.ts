@@ -1,30 +1,23 @@
+import type {
+  InsightItem,
+  OverlayInsightState,
+  PrivacyInsight,
+  RiskLevel,
+} from '../utils/overlayInsight';
+
+import {
+  createProcessingOverlayState,
+  createReadyOverlayState,
+} from '../utils/overlayInsight';
+
 const BACKEND_ORIGIN = 'http://localhost:8000';
 const TOS_PROCESS_URL = `${BACKEND_ORIGIN}/api/tos_processor/process`;
 const TOS_CACHED_URL = `${BACKEND_ORIGIN}/api/tos_processor/cached`;
 const OVERLAY_SUMMARY_URL = `${BACKEND_ORIGIN}/api/overlay_summary/top_risks`;
 
 const POLL_INTERVAL_MS = 3000;
-const MAX_POLL_ATTEMPTS = 20;
 
 type PolicyLink = { url: string; text: string };
-
-type RiskLevel = 'low' | 'medium' | 'high' | 'unknown';
-
-type InsightItem = {
-  title: string;
-  details?: string;
-};
-
-type PrivacyInsight = {
-  domain: string;
-  riskLevel: RiskLevel;
-  summary: string;
-  likelyDataCollected: InsightItem[];
-  keyConcerns: InsightItem[];
-  recommendations: string[];
-  retentionSummary: string;
-  generatedAt: number;
-};
 
 type GetInsightMessage = {
   type: 'GET_PRIVACY_INSIGHT';
@@ -81,64 +74,33 @@ type CachedAnalysisLookupResponse = {
   matched_count?: number;
 };
 
-/** Raw backend PolicyAnalysis responses cached per tab. */
-const tabBackendCache = new Map<number, Record<string, unknown>>();
+/** Raw backend PolicyAnalysis responses cached per tab-domain pair. */
+const tabBackendCache = new Map<string, Record<string, unknown>>();
 
-/** Tracks in-flight fetches so we don't duplicate requests for the same tab. */
-const tabFetchInFlight = new Set<number>();
+/** Tracks in-flight fetches so we don't duplicate requests for the same tab-domain pair. */
+const tabFetchInFlight = new Set<string>();
 
-const createProcessingInsight = (domain: string): PrivacyInsight => ({
-  domain,
-  riskLevel: 'unknown',
-  summary:
-    'Policy analysis is in progress. Treat this as a preliminary snapshot.',
-  likelyDataCollected: [
-    {
-      title: 'Account identity',
-      details: 'Name, email, and authentication data',
-    },
-    { title: 'Device and usage', details: 'IP, browser, and activity events' },
-  ],
-  keyConcerns: [
-    {
-      title: 'Sharing details may be broad',
-      details: 'Review third-party and affiliate sharing clauses.',
-    },
-    {
-      title: 'Retention duration not yet verified',
-      details: 'Look for explicit deletion and retention windows.',
-    },
-  ],
-  recommendations: [
-    'Use a dedicated email alias for new signups.',
-    'Skip optional profile fields where possible.',
-    'Review account privacy settings immediately after registration.',
-  ],
-  retentionSummary:
-    'Retention policy details are still being analyzed. Review deletion and retention terms before submitting.',
-  generatedAt: Date.now(),
-});
+const getTabDomainKey = (tabId: number, domain: string): string =>
+  `${tabId}:${domain}`;
 
-const createUnavailableInsight = (domain: string): PrivacyInsight => ({
-  domain,
-  riskLevel: 'unknown',
-  summary: 'Privacy analysis is currently unavailable.',
-  likelyDataCollected: [],
-  keyConcerns: [
-    {
-      title: 'Analysis unavailable',
-      details: 'We could not load a completed policy analysis for this site.',
-    },
-  ],
-  recommendations: ['Try again in a moment or open the dashboard later.'],
-  retentionSummary: 'Retention policy details are currently unavailable.',
-  generatedAt: Date.now(),
-});
+const clearTabDomainEntries = (tabId: number) => {
+  const keyPrefix = `${tabId}:`;
+
+  Array.from(tabBackendCache.keys()).forEach((key) => {
+    if (key.startsWith(keyPrefix)) {
+      tabBackendCache.delete(key);
+    }
+  });
+
+  Array.from(tabFetchInFlight).forEach((key) => {
+    if (key.startsWith(keyPrefix)) {
+      tabFetchInFlight.delete(key);
+    }
+  });
+};
 
 const formatAttributeName = (value: string): string =>
-  value
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -203,7 +165,10 @@ const buildLikelyDataCollected = (
 ): InsightItem[] => {
   if (!dataCollection) return [];
 
-  const personalIdentifiers = collectTypes(dataCollection, 'personal_identifiers');
+  const personalIdentifiers = collectTypes(
+    dataCollection,
+    'personal_identifiers'
+  );
   const locationData = collectTypes(dataCollection, 'precise_location');
   const deviceData = collectTypes(dataCollection, 'device_fingerprinting');
   const userContent = collectTypes(dataCollection, 'user_content');
@@ -253,8 +218,14 @@ const buildKeyConcerns = (
   if (fromFlags.length > 0) return fromFlags.slice(0, 3);
 
   const fallbackConcerns: InsightItem[] = [];
-  const unilateralStatus = getSignalStatus(legalTerms, 'unilateral_modification');
-  const arbitrationStatus = getSignalStatus(legalTerms, 'mandatory_arbitration');
+  const unilateralStatus = getSignalStatus(
+    legalTerms,
+    'unilateral_modification'
+  );
+  const arbitrationStatus = getSignalStatus(
+    legalTerms,
+    'mandatory_arbitration'
+  );
 
   if (unilateralStatus?.includes('true')) {
     fallbackConcerns.push({
@@ -305,7 +276,9 @@ const buildRecommendations = (
   return recommendations.slice(0, 4);
 };
 
-const buildRetentionSummary = (retention: Record<string, unknown> | null): string => {
+const buildRetentionSummary = (
+  retention: Record<string, unknown> | null
+): string => {
   const retentionDuration = getStringValue(retention, 'retention_duration');
   const deletionSignal = getNestedRecord(retention ?? {}, 'deletion_rights');
   const deletionStatus = getStringValue(deletionSignal, 'status');
@@ -383,7 +356,10 @@ async function fetchOverlaySummary(
     }
     const data = (await res.json()) as OverlaySummaryResponse;
     // eslint-disable-next-line no-console
-    console.log('[privasee] overlay_summary backend raw response (untouched):', data);
+    console.log(
+      '[privasee] overlay_summary backend raw response (untouched):',
+      data
+    );
     return data;
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -435,7 +411,9 @@ async function fetchCachedAnalysisByDomain(
         return null;
       }
       // eslint-disable-next-line no-console
-      console.warn('[privasee] tos_processor/cached returned malformed matched payload');
+      console.warn(
+        '[privasee] tos_processor/cached returned malformed matched payload'
+      );
       return undefined;
     }
 
@@ -449,7 +427,9 @@ async function fetchCachedAnalysisByDomain(
     }
 
     // eslint-disable-next-line no-console
-    console.warn('[privasee] tos_processor/cached returned malformed matched entries');
+    console.warn(
+      '[privasee] tos_processor/cached returned malformed matched entries'
+    );
     return undefined;
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -487,10 +467,7 @@ const buildInsightFromOverlaySummary = (
   const full = toPrivacyInsight(domain, cached);
   return {
     ...full,
-    keyConcerns:
-      keyConcerns.length > 0
-        ? keyConcerns
-        : full.keyConcerns,
+    keyConcerns: keyConcerns.length > 0 ? keyConcerns : full.keyConcerns,
     recommendations:
       recommendations.length > 0 ? recommendations : full.recommendations,
     retentionSummary: retentionSummary ?? full.retentionSummary,
@@ -511,14 +488,18 @@ async function buildReadyInsight(
 
   if (embedded) {
     // eslint-disable-next-line no-console
-    console.log('[privasee] Using embedded overlay_summary from ready analysis');
+    console.log(
+      '[privasee] Using embedded overlay_summary from ready analysis'
+    );
     return buildInsightFromOverlaySummary(domain, embedded, analysis);
   }
 
   const summary = await fetchOverlaySummary(domain);
   if (summary) {
     // eslint-disable-next-line no-console
-    console.log('[privasee] Using fetched overlay_summary to enrich ready analysis');
+    console.log(
+      '[privasee] Using fetched overlay_summary to enrich ready analysis'
+    );
     return buildInsightFromOverlaySummary(domain, summary, analysis);
   }
 
@@ -535,9 +516,11 @@ function delay(ms: number): Promise<void> {
  * Single request to tos_processor (enrich_with_top_risks on cache hit).
  * Returns the parsed JSON (200 with overlay_summary when cached, or 202 body when processing).
  */
-async function fetchTosEnrichedOnce(
-  urls: string[]
-): Promise<{ status: number; data: Record<string, unknown>; requestUrl: string }> {
+async function fetchTosEnrichedOnce(urls: string[]): Promise<{
+  status: number;
+  data: Record<string, unknown>;
+  requestUrl: string;
+}> {
   if (urls.length === 0) {
     return {
       status: 400,
@@ -545,16 +528,17 @@ async function fetchTosEnrichedOnce(
       requestUrl: '',
     };
   }
-  const queryString = urls
-    .map((u) => `url=${encodeURIComponent(u)}`)
-    .join('&');
+  const queryString = urls.map((u) => `url=${encodeURIComponent(u)}`).join('&');
   const requestUrl = `${TOS_PROCESS_URL}?${queryString}`;
   // eslint-disable-next-line no-console
   console.log('[privasee] tos_processor request URL:', requestUrl);
   const res = await fetch(requestUrl);
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   // eslint-disable-next-line no-console
-  console.log('[privasee] tos_processor backend raw response (untouched):', data);
+  console.log(
+    '[privasee] tos_processor backend raw response (untouched):',
+    data
+  );
   return { status: res.status, data, requestUrl };
 }
 
@@ -582,37 +566,33 @@ async function pollOnce(
 
   const data = (await res.json()) as Record<string, unknown>;
   // eslint-disable-next-line no-console
-  console.log('[privasee] tos_processor poll backend raw response (untouched):', data);
+  console.log(
+    '[privasee] tos_processor poll backend raw response (untouched):',
+    data
+  );
   return data;
 }
 
 /**
- * Recursively polls the backend until a result is available or attempts are
- * exhausted. Returns the parsed response or `undefined` on failure/timeout.
+ * Polls the backend until a result is available or a non-recoverable error occurs.
  */
-async function pollWithRetry(
+async function pollUntilReady(
   endpoint: string,
-  attempt: number
+  attempt = 0
 ): Promise<Record<string, unknown> | undefined> {
-  if (attempt >= MAX_POLL_ATTEMPTS) {
-    // eslint-disable-next-line no-console
-    console.warn('[privasee] Max poll attempts reached');
-    return undefined;
-  }
-
   const result = await pollOnce(endpoint);
 
-  // null → still processing, try again
-  if (result === null) {
-    // eslint-disable-next-line no-console
-    console.log(
-      `[privasee] Backend still processing (attempt ${attempt + 1}/${MAX_POLL_ATTEMPTS}), retrying...`
-    );
-    await delay(POLL_INTERVAL_MS);
-    return pollWithRetry(endpoint, attempt + 1);
+  if (result !== null) {
+    return result;
   }
 
-  return result;
+  const nextAttempt = attempt + 1;
+  // eslint-disable-next-line no-console
+  console.log(
+    `[privasee] Backend still processing (attempt ${nextAttempt}), retrying...`
+  );
+  await delay(POLL_INTERVAL_MS);
+  return pollUntilReady(endpoint, nextAttempt);
 }
 
 /**
@@ -625,24 +605,24 @@ async function fetchBackendAnalysis(
   domain: string,
   urls: string[]
 ): Promise<void> {
+  const cacheKey = getTabDomainKey(tabId, domain);
   if (urls.length === 0) return;
-  if (tabFetchInFlight.has(tabId)) return;
+  if (tabFetchInFlight.has(cacheKey)) return;
 
-  tabFetchInFlight.add(tabId);
+  tabFetchInFlight.add(cacheKey);
 
-  const queryString = urls
-    .map((u) => `url=${encodeURIComponent(u)}`)
-    .join('&');
+  const queryString = urls.map((u) => `url=${encodeURIComponent(u)}`).join('&');
   const endpoint = `${TOS_PROCESS_URL}?${queryString}`;
 
   try {
-    const result = await pollWithRetry(endpoint, 0);
+    const result = await pollUntilReady(endpoint);
 
     if (result) {
-      tabBackendCache.set(tabId, result);
+      tabBackendCache.set(cacheKey, result);
       // eslint-disable-next-line no-console
       console.log('[privasee] Backend analysis cached for tab', tabId, result);
       const insight = await buildReadyInsight(domain, result);
+      const readyState = createReadyOverlayState(insight);
 
       // eslint-disable-next-line no-console
       console.log(
@@ -652,7 +632,7 @@ async function fetchBackendAnalysis(
       await chrome.tabs
         .sendMessage(tabId, {
           type: 'PRIVACY_INSIGHT_UPDATED',
-          payload: insight,
+          payload: readyState,
         })
         .catch(() => undefined);
     }
@@ -660,7 +640,7 @@ async function fetchBackendAnalysis(
     // eslint-disable-next-line no-console
     console.error('[privasee] Backend fetch failed:', err);
   } finally {
-    tabFetchInFlight.delete(tabId);
+    tabFetchInFlight.delete(cacheKey);
   }
 }
 
@@ -735,77 +715,75 @@ chrome.runtime.onMessage.addListener(
       sendResponse({ ok: true, accepted: true });
 
       (async () => {
-        const sendResult = (data: PrivacyInsight) => {
+        const sendResult = (data: OverlayInsightState) => {
           if (typeof tabId === 'number') {
-            chrome.tabs.sendMessage(tabId, {
-              type: 'GET_PRIVACY_INSIGHT_RESULT',
-              ok: true,
-              data,
-            }).catch(() => undefined);
+            chrome.tabs
+              .sendMessage(tabId, {
+                type: 'GET_PRIVACY_INSIGHT_RESULT',
+                ok: true,
+                data,
+              })
+              .catch(() => undefined);
           }
         };
 
         try {
-          const cached =
-            typeof tabId === 'number'
-              ? tabBackendCache.get(tabId)
-              : undefined;
+          const cacheKey =
+            typeof tabId === 'number' ? getTabDomainKey(tabId, domain) : null;
+          const cached = cacheKey ? tabBackendCache.get(cacheKey) : undefined;
 
           if (cached) {
             // eslint-disable-next-line no-console
-            console.log('[privasee] Using tab-local cached analysis for ready insight');
-            sendResult(await buildReadyInsight(domain, cached));
+            console.log(
+              '[privasee] Using tab-local cached analysis for ready insight'
+            );
+            sendResult(
+              createReadyOverlayState(await buildReadyInsight(domain, cached))
+            );
             return;
           }
 
           const hydrated = await fetchCachedAnalysisByDomain(domain);
           if (hydrated) {
-            if (typeof tabId === 'number') {
-              tabBackendCache.set(tabId, hydrated);
+            if (cacheKey) {
+              tabBackendCache.set(cacheKey, hydrated);
             }
             // eslint-disable-next-line no-console
-            console.log('[privasee] Hydrated cached analysis from backend cache');
-            sendResult(await buildReadyInsight(domain, hydrated));
+            console.log(
+              '[privasee] Hydrated cached analysis from backend cache'
+            );
+            sendResult(
+              createReadyOverlayState(await buildReadyInsight(domain, hydrated))
+            );
             return;
           }
+
+          const canProcess = typeof tabId === 'number' && tosUrls.length > 0;
+          const isProcessing = cacheKey
+            ? tabFetchInFlight.has(cacheKey)
+            : false;
 
           if (hydrated === null) {
-            const canProcess = typeof tabId === 'number' && tosUrls.length > 0;
-            const isProcessing =
-              typeof tabId === 'number' && tabFetchInFlight.has(tabId);
-
-            if (isProcessing || canProcess) {
-              // eslint-disable-next-line no-console
-              console.log(
-                '[privasee] No cached analysis available — using processing insight'
-              );
-              sendResult(createProcessingInsight(domain));
-              if (canProcess && !isProcessing && typeof tabId === 'number') {
-                fetchBackendAnalysis(tabId, domain, tosUrls);
-              }
-              return;
-            }
-
+            // eslint-disable-next-line no-console
+            console.log(
+              '[privasee] No cached analysis available — keeping overlay in processing state'
+            );
+          } else {
             // eslint-disable-next-line no-console
             console.warn(
-              '[privasee] No cached analysis and no valid policy links; sending unavailable insight'
+              '[privasee] Cached analysis lookup failed; keeping overlay in processing state'
             );
-            sendResult(createUnavailableInsight(domain));
-            return;
           }
 
-          // eslint-disable-next-line no-console
-          console.warn(
-            '[privasee] Cached analysis lookup failed; sending unavailable insight'
-          );
-          sendResult(createUnavailableInsight(domain));
+          sendResult(createProcessingOverlayState(domain));
+
+          if (canProcess && !isProcessing && typeof tabId === 'number') {
+            fetchBackendAnalysis(tabId, domain, tosUrls);
+          }
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.error(
-            '[privasee] GET_PRIVACY_INSIGHT handler error:',
-            err
-          );
-          sendResult(createUnavailableInsight(domain));
+          console.error('[privasee] GET_PRIVACY_INSIGHT handler error:', err);
+          sendResult(createProcessingOverlayState(domain));
         }
       })();
 
@@ -815,7 +793,9 @@ chrome.runtime.onMessage.addListener(
     if (message.type === 'FETCH_TOS_ENRICHED') {
       const tabId = sender.tab?.id;
       const payload =
-        'payload' in message ? (message as FetchTosEnrichedMessage).payload : undefined;
+        'payload' in message
+          ? (message as FetchTosEnrichedMessage).payload
+          : undefined;
       const urls = payload?.urls?.length ? payload.urls : [];
       (async () => {
         try {
@@ -835,11 +815,13 @@ chrome.runtime.onMessage.addListener(
           // eslint-disable-next-line no-console
           console.error('[privasee] FETCH_TOS_ENRICHED failed:', err);
           if (typeof tabId === 'number') {
-            await chrome.tabs.sendMessage(tabId, {
-              type: 'FETCH_TOS_ENRICHED_RESULT',
-              ok: false,
-              error: String(err),
-            }).catch(() => undefined);
+            await chrome.tabs
+              .sendMessage(tabId, {
+                type: 'FETCH_TOS_ENRICHED_RESULT',
+                ok: false,
+                error: String(err),
+              })
+              .catch(() => undefined);
           } else {
             sendResponse({ ok: false, error: String(err) });
           }
@@ -850,7 +832,9 @@ chrome.runtime.onMessage.addListener(
 
     if (message.type === 'GET_CHROME_HISTORY') {
       const payload =
-        'payload' in message ? (message as GetChromeHistoryMessage).payload : undefined;
+        'payload' in message
+          ? (message as GetChromeHistoryMessage).payload
+          : undefined;
 
       if (!chrome.history?.search) {
         sendResponse({
@@ -884,6 +868,5 @@ chrome.runtime.onMessage.addListener(
 );
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  tabBackendCache.delete(tabId);
-  tabFetchInFlight.delete(tabId);
+  clearTabDomainEntries(tabId);
 });

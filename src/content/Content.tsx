@@ -6,26 +6,17 @@ import {
   useRef,
   useState,
 } from 'react';
+import type {
+  OverlayInsightState,
+  PrivacyInsight,
+} from '../utils/overlayInsight';
+import type { PolicyLink } from './policyLinks';
 
-import { findPolicyLinks, type PolicyLink } from './policyLinks';
-
-type RiskLevel = 'low' | 'medium' | 'high' | 'unknown';
-
-type InsightItem = {
-  title: string;
-  details?: string;
-};
-
-type PrivacyInsight = {
-  domain: string;
-  riskLevel: RiskLevel;
-  summary: string;
-  likelyDataCollected: InsightItem[];
-  keyConcerns: InsightItem[];
-  recommendations: string[];
-  retentionSummary: string;
-  generatedAt: number;
-};
+import {
+  createProcessingOverlayState,
+  OVERLAY_PROCESSING_MESSAGE,
+} from '../utils/overlayInsight';
+import { findPolicyLinks } from './policyLinks';
 
 type SignupContext = {
   container: HTMLElement | null;
@@ -37,12 +28,15 @@ type FetchInsightOptions = {
   force?: boolean;
 };
 
-const SESSION_DISMISS_KEY_PREFIX = 'privasee:overlay:dismissed:';
 const SESSION_SIGNUP_JOURNEY_KEY_PREFIX = 'privasee:overlay:signup-journey:';
 const SNOOZE_KEY = 'privasee_overlay_snooze_by_domain';
 const SIGNUP_JOURNEY_TTL_MS = 30 * 60 * 1000;
+const SKELETON_CONCERN_COUNT = 3;
+const SKELETON_ACTION_COUNT = 2;
 
 const DOMAIN = window.location.hostname;
+const getCurrentViewKey = (): string =>
+  `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
 const SIGNUP_KEYWORDS = [
   'agree and join',
@@ -235,22 +229,6 @@ const findSignupContext = (): SignupContext => {
 
 const getSessionKey = (prefix: string): string => `${prefix}${DOMAIN}`;
 
-const setSessionFlag = (key: string) => {
-  try {
-    window.sessionStorage.setItem(key, '1');
-  } catch {
-    // Ignore storage failures in restricted contexts.
-  }
-};
-
-const hasSessionFlag = (key: string): boolean => {
-  try {
-    return window.sessionStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-};
-
 const setSignupJourneySeen = () => {
   const key = getSessionKey(SESSION_SIGNUP_JOURNEY_KEY_PREFIX);
   try {
@@ -307,9 +285,7 @@ const hasDialogLevelAuthSignals = (): boolean => {
 
   return dialogs.some((dialog) => {
     const text = getNodeText(dialog);
-    const hasSignup = SIGNUP_KEYWORDS.some((keyword) =>
-      text.includes(keyword)
-    );
+    const hasSignup = SIGNUP_KEYWORDS.some((keyword) => text.includes(keyword));
     const hasLogin = LOGIN_KEYWORDS.some((keyword) => text.includes(keyword));
     const hasProviderAction =
       text.includes('continue with') ||
@@ -362,10 +338,15 @@ const isSnoozed = async (domain: string): Promise<boolean> => {
   return true;
 };
 
+const createClassName = (
+  ...classNames: Array<string | false | null | undefined>
+): string => classNames.filter(Boolean).join(' ');
+
 export default function Content(): JSX.Element {
   const [visible, setVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [insight, setInsight] = useState<PrivacyInsight | null>(null);
+  const [overlayState, setOverlayState] = useState<OverlayInsightState | null>(
+    null
+  );
   const [hasIntent, setHasIntent] = useState(false);
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({
     right: '16px',
@@ -376,15 +357,14 @@ export default function Content(): JSX.Element {
     '--privasee-spotlight-y': '82%',
   } as CSSProperties);
 
-  const currentPathRef = useRef(window.location.pathname);
+  const currentPathRef = useRef(getCurrentViewKey());
   const overlayRef = useRef<HTMLElement | null>(null);
   const fetchedForPathRef = useRef<string | null>(null);
   const visibleRef = useRef(false);
-  const insightRef = useRef<PrivacyInsight | null>(null);
+  const overlayStateRef = useRef<OverlayInsightState | null>(null);
   /** In-memory only: avoid showing overlay again in this page load. Resets on tab close/refresh. */
   const hasShownThisLoadRef = useRef(false);
-
-  const dismissSessionKey = getSessionKey(SESSION_DISMISS_KEY_PREFIX);
+  const dismissedForCurrentViewRef = useRef(false);
 
   const openBrowserSidePanel = useCallback(() => {
     if (chrome.runtime?.openOptionsPage) {
@@ -399,89 +379,34 @@ export default function Content(): JSX.Element {
     );
   }, []);
 
-  const fetchInsight = useCallback(({ force = false }: FetchInsightOptions = {}) => {
-    const currentPath = window.location.pathname;
-    if (!force && fetchedForPathRef.current === currentPath) return;
-    fetchedForPathRef.current = currentPath;
+  const fetchInsight = useCallback(
+    ({ force = false }: FetchInsightOptions = {}) => {
+      const currentPath = getCurrentViewKey();
+      if (!force && fetchedForPathRef.current === currentPath) return;
+      fetchedForPathRef.current = currentPath;
+      setOverlayState(createProcessingOverlayState(DOMAIN));
 
-    setLoading(true);
-
-    const policyLinks: PolicyLink[] = findPolicyLinks(document);
-    // eslint-disable-next-line no-console
-    console.log('[privasee:content] fetchInsight sending GET_PRIVACY_INSIGHT for', DOMAIN);
-
-    const fallbackInsight: PrivacyInsight = {
-      domain: DOMAIN,
-      riskLevel: 'unknown',
-      summary: 'Privacy analysis is still loading.',
-      likelyDataCollected: [],
-      keyConcerns: [],
-      recommendations: ['Review account privacy settings after signup.'],
-      retentionSummary:
-        'Retention terms are still loading. Review policy details before submitting.',
-      generatedAt: Date.now(),
-    };
-
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const handleResult = (message: { type: string; ok?: boolean; data?: PrivacyInsight }) => {
-      if (message.type !== 'GET_PRIVACY_INSIGHT_RESULT') return;
-      try {
-        try {
-          chrome.runtime.onMessage.removeListener(handleResult);
-        } catch {
-          // Extension context may be invalidated (e.g. reload)
-        }
-        clearTimeout(timeoutId);
-        // eslint-disable-next-line no-console
-        console.log('[privasee:content] GET_PRIVACY_INSIGHT response (api data):', message);
-        if (message.ok && message.data) {
-          // eslint-disable-next-line no-console
-          console.log('[privasee:content] keyConcerns received:', message.data.keyConcerns);
-          setInsight(message.data);
-        } else {
-          setInsight(fallbackInsight);
-        }
-        setLoading(false);
-      } catch (err) {
-        // Avoid uncaught errors when port is disconnected (e.g. CRX HMR / service worker restart)
-        // eslint-disable-next-line no-console
-        console.warn('[privasee:content] handleResult error:', err);
-        setLoading(false);
-      }
-    };
-
-    timeoutId = setTimeout(() => {
-      try {
-        chrome.runtime.onMessage.removeListener(handleResult);
-      } catch {
-        // Extension context may be invalidated
-      }
-      setInsight(fallbackInsight);
-      setLoading(false);
-    }, 30000);
-
-    chrome.runtime.onMessage.addListener(handleResult);
-    chrome.runtime.sendMessage({
-      type: 'GET_PRIVACY_INSIGHT',
-      payload: {
-        domain: DOMAIN,
-        pathname: window.location.pathname,
-        policyLinks,
-      },
-    }).catch(() => {
-      try {
-        chrome.runtime.onMessage.removeListener(handleResult);
-      } catch {
-        // Extension context may be invalidated
-      }
-      clearTimeout(timeoutId);
-      setInsight({
-        ...fallbackInsight,
-        summary: 'Unable to load privacy summary right now.',
-      });
-      setLoading(false);
-    });
-  }, []);
+      const policyLinks: PolicyLink[] = findPolicyLinks(document);
+      // eslint-disable-next-line no-console
+      console.log(
+        '[privasee:content] fetchInsight sending GET_PRIVACY_INSIGHT for',
+        DOMAIN
+      );
+      chrome.runtime
+        .sendMessage({
+          type: 'GET_PRIVACY_INSIGHT',
+          payload: {
+            domain: DOMAIN,
+            pathname: getCurrentViewKey(),
+            policyLinks,
+          },
+        })
+        .catch(() => {
+          setOverlayState(createProcessingOverlayState(DOMAIN));
+        });
+    },
+    []
+  );
 
   const reopenOverlay = useCallback(() => {
     if (visibleRef.current) return;
@@ -489,22 +414,24 @@ export default function Content(): JSX.Element {
     hasShownThisLoadRef.current = true;
     setHasIntent(true);
     setVisible(true);
-    if (!insightRef.current && !loading) {
+    dismissedForCurrentViewRef.current = false;
+    if (overlayStateRef.current?.status !== 'ready') {
       fetchInsight({ force: true });
     }
-  }, [fetchInsight, loading]);
+  }, [fetchInsight]);
 
   const showOverlay = useCallback(async () => {
     if (visibleRef.current) return;
-    if (hasSessionFlag(dismissSessionKey)) return;
+    if (dismissedForCurrentViewRef.current) return;
     if (hasShownThisLoadRef.current) return;
     if (await isSnoozed(DOMAIN)) return;
 
     hasShownThisLoadRef.current = true;
+    setHasIntent(true);
     setVisible(true);
 
     fetchInsight();
-  }, [dismissSessionKey, fetchInsight]);
+  }, [fetchInsight]);
 
   const evaluateIntentAndMaybeShow = useCallback(async () => {
     const context = findSignupContext();
@@ -578,10 +505,10 @@ export default function Content(): JSX.Element {
     await showOverlay();
   }, [showOverlay]);
 
-  const dismissForSession = useCallback(() => {
-    setSessionFlag(dismissSessionKey);
+  const dismissForCurrentView = useCallback(() => {
+    dismissedForCurrentViewRef.current = true;
     setVisible(false);
-  }, [dismissSessionKey]);
+  }, []);
 
   const updatePopoverPosition = useCallback(() => {
     setPopoverStyle({
@@ -609,8 +536,8 @@ export default function Content(): JSX.Element {
   }, [visible]);
 
   useEffect(() => {
-    insightRef.current = insight;
-  }, [insight]);
+    overlayStateRef.current = overlayState;
+  }, [overlayState]);
 
   useEffect(() => {
     const onFocusIn = () => {
@@ -625,7 +552,7 @@ export default function Content(): JSX.Element {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && visibleRef.current) {
-        dismissForSession();
+        dismissForCurrentView();
       }
     };
 
@@ -659,7 +586,7 @@ export default function Content(): JSX.Element {
       document.removeEventListener('click', onClick, true);
     };
   }, [
-    dismissForSession,
+    dismissForCurrentView,
     evaluateIntentAndMaybeShow,
     showOverlay,
     updatePopoverPosition,
@@ -683,21 +610,19 @@ export default function Content(): JSX.Element {
       window.removeEventListener('resize', onResize);
       window.removeEventListener('scroll', onResize, true);
     };
-  }, [
-    updatePopoverPosition,
-    visible,
-    syncBackdropToPopover,
-  ]);
+  }, [updatePopoverPosition, visible, syncBackdropToPopover]);
 
   useEffect(() => {
     const syncPath = () => {
-      if (currentPathRef.current === window.location.pathname) return;
-      currentPathRef.current = window.location.pathname;
+      const currentViewKey = getCurrentViewKey();
+      if (currentPathRef.current === currentViewKey) return;
+      currentPathRef.current = currentViewKey;
       fetchedForPathRef.current = null;
       hasShownThisLoadRef.current = false;
+      dismissedForCurrentViewRef.current = false;
       setVisible(false);
       setHasIntent(false);
-      setInsight(null);
+      setOverlayState(null);
       evaluateIntentAndMaybeShow().catch(() => undefined);
     };
 
@@ -735,7 +660,9 @@ export default function Content(): JSX.Element {
     const onMessage = (
       message: {
         type?: string;
-        payload?: PrivacyInsight;
+        ok?: boolean;
+        data?: OverlayInsightState;
+        payload?: OverlayInsightState;
       },
       _sender: chrome.runtime.MessageSender,
       sendResponse: (response?: { ok: boolean; reopened?: boolean }) => void
@@ -752,20 +679,27 @@ export default function Content(): JSX.Element {
           return undefined;
         }
 
-        if (message.type !== 'PRIVACY_INSIGHT_UPDATED' || !message.payload) {
+        let nextState: OverlayInsightState | undefined;
+        if (message.type === 'GET_PRIVACY_INSIGHT_RESULT') {
+          nextState = message.data;
+        } else if (message.type === 'PRIVACY_INSIGHT_UPDATED') {
+          nextState = message.payload;
+        }
+
+        if (!message.ok && message.type === 'GET_PRIVACY_INSIGHT_RESULT') {
           return undefined;
         }
-        if (message.payload.domain !== DOMAIN) return undefined;
+        if (!nextState || nextState.domain !== DOMAIN) return undefined;
+
         // eslint-disable-next-line no-console
         console.log(
-          '[privasee:content] PRIVACY_INSIGHT_UPDATED received, keyConcerns:',
-          message.payload.keyConcerns
+          '[privasee:content] overlay state update received:',
+          nextState
         );
-        setInsight(message.payload);
-        setLoading(false);
+        setOverlayState(nextState);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.warn('[privasee:content] PRIVACY_INSIGHT_UPDATED handler error:', err);
+        console.warn('[privasee:content] overlay state handler error:', err);
       }
       return undefined;
     };
@@ -784,44 +718,36 @@ export default function Content(): JSX.Element {
     return <div id='my-ext' className='privasee-shell' data-theme='dark' />;
   }
 
-  const fallbackConcerns: InsightItem[] = [
-    {
-      title: 'Sharing details may be broad',
-      details: 'Review third-party and affiliate sharing clauses.',
-    },
-    {
-      title: 'Retention duration not yet verified',
-      details: 'Look for explicit deletion and retention windows.',
-    },
-  ];
-  // Risk factors use explanation (in details), not evidence, for user-facing text
-  const rawConcerns = insight?.keyConcerns ?? [];
-  const keyConcerns =
-    rawConcerns.length > 0 ? rawConcerns.slice(0, 3) : fallbackConcerns;
-
-  const fallbackRecommendations = [
-    'Use a dedicated email alias for this signup.',
-    'Review privacy settings as soon as account creation is complete.',
-  ];
-  const recommendations = insight?.recommendations?.length
-    ? insight.recommendations
-    : fallbackRecommendations;
-  const actionItems = recommendations.slice(0, 2);
-
-  const retentionSummary =
-    insight?.retentionSummary ||
-    'Retention terms are still being analyzed. Review policy details before submitting.';
-
-  const summaryText =
-    insight?.summary ||
-    'We are still processing policy links for a complete risk assessment.';
-  const sharedDataItems = keyConcerns.slice(0, 3);
+  const isLoadingState = !overlayState || overlayState.status === 'processing';
+  const readyInsight: PrivacyInsight | null =
+    overlayState?.status === 'ready' ? overlayState.insight : null;
+  const processingMessage =
+    overlayState?.status === 'processing'
+      ? overlayState.message
+      : OVERLAY_PROCESSING_MESSAGE;
+  const summaryText = readyInsight?.summary?.trim() ?? '';
+  const sharedDataItems = readyInsight?.likelyDataCollected.slice(0, 3) ?? [];
+  const keyConcerns = readyInsight?.keyConcerns.slice(0, 3) ?? [];
+  const actionItems = readyInsight?.recommendations.slice(0, 2) ?? [];
+  const retentionSummary = readyInsight?.retentionSummary?.trim() ?? '';
+  let summaryContent: JSX.Element | null = null;
+  if (isLoadingState) {
+    summaryContent = (
+      <div aria-hidden='true' className='privasee-summary-skeleton'>
+        <span className='privasee-skeleton privasee-skeleton-line privasee-summary-line' />
+        <span className='privasee-skeleton privasee-skeleton-line privasee-summary-line privasee-summary-line-medium' />
+        <span className='privasee-skeleton privasee-skeleton-line privasee-summary-line privasee-summary-line-short' />
+      </div>
+    );
+  } else if (summaryText) {
+    summaryContent = <p className='privasee-summary'>{summaryText}</p>;
+  }
 
   return (
     <div id='my-ext' className='privasee-shell' data-theme='dark'>
       <div
         aria-hidden='true'
-        className='privasee-cinematic-backdrop privasee-backdrop pointer-events-none fixed inset-0 z-[2147483646]'
+        className='privasee-cinematic-backdrop privasee-backdrop privasee-overlay-backdrop'
         style={spotlightVars}
       />
 
@@ -829,14 +755,15 @@ export default function Content(): JSX.Element {
         ref={overlayRef}
         role='dialog'
         aria-label='Signup privacy insight'
-        className='privasee-popover-enter privasee-popover-pulse privasee-overlay pointer-events-auto fixed z-[2147483647]'
+        aria-busy={isLoadingState}
+        className='privasee-popover-enter privasee-popover-pulse privasee-overlay privasee-overlay-panel'
         style={popoverStyle}
       >
         <button
           type='button'
           aria-label='Dismiss'
           className='privasee-close-btn'
-          onClick={dismissForSession}
+          onClick={dismissForCurrentView}
         >
           ×
         </button>
@@ -850,67 +777,156 @@ export default function Content(): JSX.Element {
           <div>
             <h2 className='privasee-title'>Privacy Risk Snapshot</h2>
             <p className='privasee-domain'>{DOMAIN}</p>
-            <p className='privasee-summary'>{summaryText}</p>
+            {isLoadingState ? (
+              <p className='privasee-loading'>{processingMessage}</p>
+            ) : null}
+            {summaryContent}
           </div>
         </header>
 
         <section className='privasee-section-stack'>
           <article className='privasee-detail-block'>
             <h3 className='privasee-block-title'>Data Being Shared</h3>
-            <ul className='privasee-data-pills'>
-              {sharedDataItems.map((item, index) => (
-                <li
-                  key={item.title}
-                  className={`privasee-data-pill ${index < 2 ? 'is-critical' : 'is-medium'}`}
-                >
-                  {item.title}
-                </li>
-              ))}
-            </ul>
+            {isLoadingState ? (
+              <ul
+                aria-hidden='true'
+                className='privasee-data-pills privasee-skeleton-pill-list'
+              >
+                {Array.from({ length: SKELETON_CONCERN_COUNT }, (_, index) => (
+                  <li
+                    key={`pill-skeleton-${index + 1}`}
+                    className={createClassName(
+                      'privasee-skeleton',
+                      'privasee-skeleton-pill',
+                      index === 0 && 'privasee-skeleton-pill-wide',
+                      index === 1 && 'privasee-skeleton-pill-medium'
+                    )}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <ul className='privasee-data-pills'>
+                {sharedDataItems.map((item, index) => (
+                  <li
+                    key={item.title}
+                    className={`privasee-data-pill ${index < 2 ? 'is-critical' : 'is-medium'}`}
+                  >
+                    {item.title}
+                  </li>
+                ))}
+              </ul>
+            )}
           </article>
 
           <article className='privasee-detail-block'>
             <h3 className='privasee-block-title'>Top Concerns</h3>
-            <div className='privasee-concern-list'>
-              {keyConcerns.map((tile, index) => {
-                const concernToneClass = index < 2 ? 'is-critical' : 'is-medium';
-                const concernKey = `${tile.title}-${tile.details ?? concernToneClass}`;
+            {isLoadingState ? (
+              <div aria-hidden='true' className='privasee-concern-list'>
+                {Array.from(
+                  { length: SKELETON_CONCERN_COUNT },
+                  (_, index) => index
+                ).map((index) => {
+                  const concernToneClass =
+                    index < 2 ? 'is-critical' : 'is-medium';
 
-                return (
-                  <article
-                    key={concernKey}
-                    className={`privasee-concern-card ${concernToneClass}`}
-                  >
-                    <p className='privasee-concern-text'>
-                      {tile.details || 'Review this clause in the policy for more details.'}
-                    </p>
-                  </article>
-                );
-              })}
-            </div>
+                  return (
+                    <article
+                      key={`concern-skeleton-${index + 1}`}
+                      className='privasee-concern-card privasee-concern-card-skeleton'
+                    >
+                      <span
+                        className={`privasee-concern-skeleton-rail ${concernToneClass}`}
+                      />
+                      <div className='privasee-concern-skeleton-copy'>
+                        <span className='privasee-skeleton privasee-skeleton-line privasee-concern-skeleton-line' />
+                        <span className='privasee-skeleton privasee-skeleton-line privasee-concern-skeleton-line privasee-concern-skeleton-line-short' />
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className='privasee-concern-list'>
+                {keyConcerns.map((tile, index) => {
+                  const concernToneClass =
+                    index < 2 ? 'is-critical' : 'is-medium';
+                  const concernKey = `${tile.title}-${tile.details ?? index}`;
+
+                  return (
+                    <article
+                      key={concernKey}
+                      className={`privasee-concern-card ${concernToneClass}`}
+                    >
+                      {tile.details ? (
+                        <p className='privasee-concern-text'>{tile.details}</p>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </article>
 
           <article className='privasee-info-card privasee-retention-panel'>
-            <h3 className='privasee-subtitle'>
-              DATA RENTENTION POLICY
-            </h3>
-            <p className='privasee-copy'>
-              {retentionSummary}
-            </p>
+            {isLoadingState ? (
+              <div aria-hidden='true' className='privasee-card-skeleton'>
+                <span className='privasee-skeleton privasee-skeleton-line privasee-skeleton-title' />
+                <span className='privasee-skeleton privasee-skeleton-line privasee-card-line' />
+                <span className='privasee-skeleton privasee-skeleton-line privasee-card-line privasee-card-line-short' />
+              </div>
+            ) : (
+              <>
+                <h3 className='privasee-subtitle'>DATA RENTENTION POLICY</h3>
+                {retentionSummary ? (
+                  <p className='privasee-copy'>{retentionSummary}</p>
+                ) : null}
+              </>
+            )}
           </article>
 
           <article className='privasee-info-card privasee-action-panel'>
-            <h3 className='privasee-subtitle'>
-              REDUCE EXPOSURE NOW
-            </h3>
-            <ul className='privasee-action-list'>
-              {actionItems.map((item, index) => (
-                <li key={item} className='privasee-action-item'>
-                  <span className='privasee-action-number'>{index + 1}.</span>
-                  <span className='privasee-action-copy'>{item}</span>
-                </li>
-              ))}
-            </ul>
+            {isLoadingState ? (
+              <div aria-hidden='true' className='privasee-card-skeleton'>
+                <span className='privasee-skeleton privasee-skeleton-line privasee-skeleton-title privasee-skeleton-title-wide' />
+                <div className='privasee-numbered-skeleton-list'>
+                  {Array.from(
+                    { length: SKELETON_ACTION_COUNT },
+                    (_, index) => index + 1
+                  ).map((index) => (
+                    <div
+                      key={`action-skeleton-${index}`}
+                      className='privasee-numbered-skeleton-row'
+                    >
+                      <span className='privasee-numbered-skeleton-index'>
+                        {index}.
+                      </span>
+                      <span
+                        className={createClassName(
+                          'privasee-skeleton',
+                          'privasee-skeleton-line',
+                          'privasee-numbered-skeleton-line',
+                          index === 2 && 'privasee-numbered-skeleton-line-short'
+                        )}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <h3 className='privasee-subtitle'>REDUCE EXPOSURE NOW</h3>
+                <ul className='privasee-action-list'>
+                  {actionItems.map((item, index) => (
+                    <li key={item} className='privasee-action-item'>
+                      <span className='privasee-action-number'>
+                        {index + 1}.
+                      </span>
+                      <span className='privasee-action-copy'>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </article>
         </section>
 
