@@ -1,68 +1,106 @@
-import { JSX } from 'react';
+import { JSX, useEffect, useState } from 'react';
+
+type PopupState = 'dispatching' | 'unsupported';
+
+const openDashboard = () => {
+  if (chrome.runtime?.openOptionsPage) {
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+
+  window.open(
+    chrome.runtime.getURL('src/options/index.html'),
+    '_blank',
+    'noopener,noreferrer'
+  );
+};
 
 export default function Popup(): JSX.Element {
+  const [status, setStatus] = useState<PopupState>('dispatching');
+  const [message, setMessage] = useState('Reopening overlay on this tab...');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const reopenOnActiveTab = async () => {
+      try {
+        if (!chrome.tabs?.query || !chrome.tabs?.sendMessage) {
+          throw new Error('Tab messaging is unavailable.');
+        }
+
+        const tabs = await chrome.tabs.query({
+          active: true,
+          currentWindow: true,
+        });
+        const activeTab = tabs[0];
+
+        if (typeof activeTab?.id !== 'number') {
+          throw new Error('No active tab is available.');
+        }
+
+        await chrome.tabs.sendMessage(activeTab.id, {
+          type: 'REOPEN_OVERLAY',
+        });
+
+        window.close();
+      } catch (error) {
+        if (!isMounted) return;
+
+        setStatus('unsupported');
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : 'This page does not support the in-page overlay.'
+        );
+      }
+    };
+
+    reopenOnActiveTab().catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  if (status === 'dispatching') {
+    return (
+      <div
+        id='my-ext'
+        className='w-[320px] bg-zinc-950 bg-gradient-to-b from-zinc-950 via-zinc-900 to-neutral-950 p-4 text-zinc-100'
+        data-theme='dark'
+      >
+        <div className='flex flex-col gap-3'>
+          <p className='text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300'>
+            Privasee
+          </p>
+          <h1 className='text-lg font-semibold text-zinc-50'>Reopening overlay</h1>
+          <p className='text-sm leading-6 text-zinc-300'>{message}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       id='my-ext'
-      className='w-[372px] bg-zinc-950 bg-gradient-to-b from-zinc-950 via-zinc-900 to-neutral-950 p-4 text-zinc-100'
+      className='w-[320px] bg-zinc-950 bg-gradient-to-b from-zinc-950 via-zinc-900 to-neutral-950 p-4 text-zinc-100'
       data-theme='dark'
     >
       <div className='flex flex-col gap-3'>
-        <h1 className='mb-1 text-lg font-semibold text-zinc-50'>Risk Snapshot</h1>
-
-        <div className='rounded-xl border border-red-700 bg-red-950 p-3 shadow-[0_0_0_1px_rgba(239,68,68,0.08)]'>
-          <h2 className='text-sm font-bold text-red-200'>
-            Auto-Renewal Without Reminder
-          </h2>
-          <p className='mt-1 text-xs leading-5 text-zinc-200/90'>
-            The policy allows automatic renewal and may charge your saved payment method
-            unless you cancel before the renewal date.
-          </p>
-        </div>
-
-        <div className='rounded-xl border border-amber-700 bg-amber-950 p-3 shadow-[0_0_0_1px_rgba(245,158,11,0.08)]'>
-          <h2 className='text-sm font-bold text-amber-200'>
-            Broad Data Sharing Clause
-          </h2>
-          <p className='mt-1 text-xs leading-5 text-zinc-200/90'>
-            Your account and usage data can be shared with affiliates and service providers
-            for analytics and business operations.
-          </p>
-        </div>
-
-        <div className='rounded-xl border border-amber-700 bg-amber-950 p-3 shadow-[0_0_0_1px_rgba(245,158,11,0.08)]'>
-          <h2 className='text-sm font-bold text-amber-200'>
-            Unilateral Terms Updates
-          </h2>
-          <p className='mt-1 text-xs leading-5 text-zinc-200/90'>
-            Terms may be changed at any time, and continued use after updates can be
-            interpreted as acceptance.
-          </p>
-        </div>
-
-        <div className='rounded-xl border border-zinc-700 bg-zinc-900 p-3'>
-          <h2 className='text-sm font-semibold text-zinc-100'>Data Retention Policy</h2>
-          <p className='mt-1 text-xs leading-5 text-zinc-300'>
-            Data is retained for up to 24 months after account inactivity. Records may be
-            kept longer when required for legal or fraud-prevention obligations.
-          </p>
-        </div>
-
-        <div className='rounded-xl border border-zinc-700 bg-zinc-900 p-3'>
-          <h2 className='text-sm font-semibold text-zinc-100'>
-            Action Items You Can Take Now
-          </h2>
-          <ul className='mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-zinc-300'>
-            <li>
-              Set a calendar reminder 3 days before renewal and confirm that auto-renewal
-              is disabled if you do not want recurring charges.
-            </li>
-            <li>
-              Limit optional profile details and review privacy/account settings to restrict
-              third-party data sharing wherever available.
-            </li>
-          </ul>
-        </div>
+        <p className='text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300'>
+          Privasee
+        </p>
+        <h1 className='text-lg font-semibold text-zinc-50'>Overlay unavailable</h1>
+        <p className='text-sm leading-6 text-zinc-300'>
+          {message || 'This page does not expose the in-page overlay.'}
+        </p>
+        <button
+          type='button'
+          className='rounded-xl border border-cyan-300/40 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/18'
+          onClick={openDashboard}
+        >
+          Open Dashboard
+        </button>
       </div>
     </div>
   );

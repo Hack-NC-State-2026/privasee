@@ -1,5 +1,6 @@
 const BACKEND_ORIGIN = 'http://localhost:8000';
 const TOS_PROCESS_URL = `${BACKEND_ORIGIN}/api/tos_processor/process`;
+const TOS_CACHED_URL = `${BACKEND_ORIGIN}/api/tos_processor/cached`;
 const OVERLAY_SUMMARY_URL = `${BACKEND_ORIGIN}/api/overlay_summary/top_risks`;
 
 const POLL_INTERVAL_MS = 3000;
@@ -75,13 +76,18 @@ type OverlaySummaryResponse = {
   has_cached_analysis: boolean;
 };
 
+type CachedAnalysisLookupResponse = {
+  matched?: Record<string, unknown>;
+  matched_count?: number;
+};
+
 /** Raw backend PolicyAnalysis responses cached per tab. */
 const tabBackendCache = new Map<number, Record<string, unknown>>();
 
 /** Tracks in-flight fetches so we don't duplicate requests for the same tab. */
 const tabFetchInFlight = new Set<number>();
 
-const createFallbackInsight = (domain: string): PrivacyInsight => ({
+const createProcessingInsight = (domain: string): PrivacyInsight => ({
   domain,
   riskLevel: 'unknown',
   summary:
@@ -113,20 +119,47 @@ const createFallbackInsight = (domain: string): PrivacyInsight => ({
   generatedAt: Date.now(),
 });
 
+const createUnavailableInsight = (domain: string): PrivacyInsight => ({
+  domain,
+  riskLevel: 'unknown',
+  summary: 'Privacy analysis is currently unavailable.',
+  likelyDataCollected: [],
+  keyConcerns: [
+    {
+      title: 'Analysis unavailable',
+      details: 'We could not load a completed policy analysis for this site.',
+    },
+  ],
+  recommendations: ['Try again in a moment or open the dashboard later.'],
+  retentionSummary: 'Retention policy details are currently unavailable.',
+  generatedAt: Date.now(),
+});
+
 const formatAttributeName = (value: string): string =>
   value
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const isOverlaySummaryResponse = (
+  value: unknown
+): value is OverlaySummaryResponse =>
+  isRecord(value) &&
+  typeof value.domain === 'string' &&
+  Array.isArray(value.top_high_risk_attributes) &&
+  typeof value.has_cached_analysis === 'boolean';
 
 const getNestedRecord = (
   source: Record<string, unknown>,
   key: string
 ): Record<string, unknown> | null => {
   const value = source[key];
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return null;
   }
-  return value as Record<string, unknown>;
+  return value;
 };
 
 const getStringValue = (
@@ -360,14 +393,80 @@ async function fetchOverlaySummary(
 }
 
 /**
+ * Fetch the fully cached PolicyAnalysis payload for a domain.
+ * Returns the first matched analysis on success, `null` for a confirmed miss,
+ * or `undefined` when the lookup failed or returned malformed data.
+ */
+async function fetchCachedAnalysisByDomain(
+  domain: string
+): Promise<Record<string, unknown> | null | undefined> {
+  const url = `${TOS_CACHED_URL}?domain=${encodeURIComponent(domain)}`;
+  // eslint-disable-next-line no-console
+  console.log('[privasee] Calling tos_processor cached API:', url);
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[privasee] tos_processor/cached returned',
+        res.status,
+        res.statusText
+      );
+      return undefined;
+    }
+
+    const data = (await res
+      .json()
+      .catch(() => null)) as CachedAnalysisLookupResponse | null;
+    // eslint-disable-next-line no-console
+    console.log('[privasee] tos_processor/cached backend raw response:', data);
+
+    if (!isRecord(data)) {
+      // eslint-disable-next-line no-console
+      console.warn('[privasee] tos_processor/cached returned malformed JSON');
+      return undefined;
+    }
+
+    const { matched, matched_count: matchedCount } =
+      data as CachedAnalysisLookupResponse;
+    if (!isRecord(matched)) {
+      if (matchedCount === 0) {
+        return null;
+      }
+      // eslint-disable-next-line no-console
+      console.warn('[privasee] tos_processor/cached returned malformed matched payload');
+      return undefined;
+    }
+
+    const firstMatch = Object.values(matched).find(isRecord);
+    if (firstMatch) {
+      return firstMatch;
+    }
+
+    if (Object.keys(matched).length === 0 || matchedCount === 0) {
+      return null;
+    }
+
+    // eslint-disable-next-line no-console
+    console.warn('[privasee] tos_processor/cached returned malformed matched entries');
+    return undefined;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[privasee] tos_processor/cached fetch failed:', err);
+    return undefined;
+  }
+}
+
+/**
  * Build a PrivacyInsight from the overlay_summary response.
- * Uses the top-3 high-risk attributes as keyConcerns; fills other sections
- * from the full cached analysis when available.
+ * Uses the top-3 high-risk attributes as keyConcerns and fills the remaining
+ * sections from the full cached analysis.
  */
 const buildInsightFromOverlaySummary = (
   domain: string,
   summary: OverlaySummaryResponse,
-  cached: Record<string, unknown> | undefined
+  cached: Record<string, unknown>
 ): PrivacyInsight => {
   // Key concerns: set details from explanation only (never evidence, no fallback to evidence).
   const keyConcerns: InsightItem[] = summary.top_high_risk_attributes.map(
@@ -385,50 +484,46 @@ const buildInsightFromOverlaySummary = (
       ?.map((m) => m.mitigation?.trim())
       .filter((s): s is string => Boolean(s)) ?? [];
 
-  // Fill remaining sections from the full cached analysis if available
-  if (cached) {
-    const full = toPrivacyInsight(domain, cached);
-    return {
-      ...full,
-      keyConcerns:
-        keyConcerns.length > 0 ? keyConcerns : full.keyConcerns,
-      retentionSummary: retentionSummary ?? full.retentionSummary,
-      recommendations:
-        recommendations.length > 0 ? recommendations : full.recommendations,
-    };
-  }
-
-  const fallbackRecommendations = [
-    'Use a dedicated email alias for new signups.',
-    'Skip optional profile fields where possible.',
-    'Review account privacy settings immediately after registration.',
-  ];
-
-  // No full analysis available yet — return a slim insight
+  const full = toPrivacyInsight(domain, cached);
   return {
-    domain,
-    riskLevel: 'unknown',
-    summary:
-      'Policy analysis is in progress. Treat this as a preliminary snapshot.',
-    likelyDataCollected: [],
+    ...full,
     keyConcerns:
       keyConcerns.length > 0
         ? keyConcerns
-        : [
-            {
-              title: 'Analyzing privacy policy',
-              details:
-                'We are extracting key risk clauses from the linked policy pages.',
-            },
-          ],
+        : full.keyConcerns,
     recommendations:
-      recommendations.length > 0 ? recommendations : fallbackRecommendations,
-    retentionSummary:
-      retentionSummary ??
-      'Retention policy details are still being analyzed. Review deletion and retention terms before submitting.',
-    generatedAt: Date.now(),
+      recommendations.length > 0 ? recommendations : full.recommendations,
+    retentionSummary: retentionSummary ?? full.retentionSummary,
   };
 };
+
+/**
+ * Build a ready-state insight from a full cached analysis payload, enriching it
+ * with overlay-summary data when available.
+ */
+async function buildReadyInsight(
+  domain: string,
+  analysis: Record<string, unknown>
+): Promise<PrivacyInsight> {
+  const embedded = isOverlaySummaryResponse(analysis.overlay_summary)
+    ? analysis.overlay_summary
+    : undefined;
+
+  if (embedded) {
+    // eslint-disable-next-line no-console
+    console.log('[privasee] Using embedded overlay_summary from ready analysis');
+    return buildInsightFromOverlaySummary(domain, embedded, analysis);
+  }
+
+  const summary = await fetchOverlaySummary(domain);
+  if (summary) {
+    // eslint-disable-next-line no-console
+    console.log('[privasee] Using fetched overlay_summary to enrich ready analysis');
+    return buildInsightFromOverlaySummary(domain, summary, analysis);
+  }
+
+  return toPrivacyInsight(domain, analysis);
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -547,37 +642,7 @@ async function fetchBackendAnalysis(
       tabBackendCache.set(tabId, result);
       // eslint-disable-next-line no-console
       console.log('[privasee] Backend analysis cached for tab', tabId, result);
-
-      // Use the embedded overlay_summary from the tos_processor response
-      // when available (cache-hit path), otherwise fall back to a separate
-      // overlay_summary API call.
-      const embedded = result.overlay_summary as
-        | OverlaySummaryResponse
-        | undefined;
-
-      let insight: PrivacyInsight;
-
-      if (
-        embedded &&
-        Array.isArray(embedded.top_high_risk_attributes) &&
-        embedded.top_high_risk_attributes.length > 0
-      ) {
-        // eslint-disable-next-line no-console
-        console.log(
-          '[privasee] Using embedded overlay_summary from tos_processor response'
-        );
-        insight = buildInsightFromOverlaySummary(domain, embedded, result);
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(
-          '[privasee] No embedded overlay_summary — fetching separately for',
-          domain
-        );
-        const summary = await fetchOverlaySummary(domain);
-        insight = summary
-          ? buildInsightFromOverlaySummary(domain, summary, result)
-          : toPrivacyInsight(domain, result);
-      }
+      const insight = await buildReadyInsight(domain, result);
 
       // eslint-disable-next-line no-console
       console.log(
@@ -669,113 +734,78 @@ chrome.runtime.onMessage.addListener(
       // actual insight updates through tab messages.
       sendResponse({ ok: true, accepted: true });
 
-      // Async handler — check for embedded overlay_summary from a prior
-      // tos_processor cache hit first, then fall back to a separate API call.
       (async () => {
+        const sendResult = (data: PrivacyInsight) => {
+          if (typeof tabId === 'number') {
+            chrome.tabs.sendMessage(tabId, {
+              type: 'GET_PRIVACY_INSIGHT_RESULT',
+              ok: true,
+              data,
+            }).catch(() => undefined);
+          }
+        };
+
         try {
           const cached =
             typeof tabId === 'number'
               ? tabBackendCache.get(tabId)
               : undefined;
 
-          // Try embedded overlay_summary from a cached tos_processor response
-          const embedded = cached?.overlay_summary as
-            | OverlaySummaryResponse
-            | undefined;
-
-          // Resolve overlay summary: prefer embedded, fall back to API call
-          let summary: OverlaySummaryResponse | undefined;
-          if (
-            embedded &&
-            Array.isArray(embedded.top_high_risk_attributes) &&
-            embedded.top_high_risk_attributes.length > 0
-          ) {
+          if (cached) {
             // eslint-disable-next-line no-console
-            console.log(
-              '[privasee] Using embedded overlay_summary from cached tos_processor result'
-            );
-            summary = embedded;
-          } else {
-            summary = await fetchOverlaySummary(domain);
+            console.log('[privasee] Using tab-local cached analysis for ready insight');
+            sendResult(await buildReadyInsight(domain, cached));
+            return;
           }
 
-          const sendResult = (data: PrivacyInsight) => {
+          const hydrated = await fetchCachedAnalysisByDomain(domain);
+          if (hydrated) {
             if (typeof tabId === 'number') {
-              chrome.tabs.sendMessage(tabId, {
-                type: 'GET_PRIVACY_INSIGHT_RESULT',
-                ok: true,
-                data,
-              }).catch(() => undefined);
+              tabBackendCache.set(tabId, hydrated);
             }
-          };
-
-          if (
-            summary &&
-            summary.has_cached_analysis &&
-            summary.top_high_risk_attributes.length > 0
-          ) {
             // eslint-disable-next-line no-console
-            console.log(
-              '[privasee] overlay_summary has results — using top risks as keyConcerns'
-            );
-            const insight = buildInsightFromOverlaySummary(
-              domain,
-              summary,
-              cached
-            );
-            // eslint-disable-next-line no-console
-            console.log(
-              '[privasee] Sending insight with overlay keyConcerns:',
-              insight.keyConcerns
-            );
-            sendResult(insight);
-          } else if (cached) {
-            // eslint-disable-next-line no-console
-            console.log(
-              '[privasee] No overlay summary results, using cached full analysis'
-            );
-            sendResult(toPrivacyInsight(domain, cached));
-          } else {
-            // eslint-disable-next-line no-console
-            console.log(
-              '[privasee] No cached analysis — sending fallback insight'
-            );
-            sendResult(createFallbackInsight(domain));
+            console.log('[privasee] Hydrated cached analysis from backend cache');
+            sendResult(await buildReadyInsight(domain, hydrated));
+            return;
           }
 
-          // Trigger TOS processing when cache data is missing/empty, or when
-          // overlay_summary is temporarily unavailable.
-          const shouldTriggerTos =
-            !summary ||
-            !summary.has_cached_analysis ||
-            summary.top_high_risk_attributes.length === 0;
-          if (shouldTriggerTos) {
-            // eslint-disable-next-line no-console
-            console.log(
-              '[privasee] overlay_summary empty/no-cache — triggering TOS processing'
-            );
-            if (typeof tabId === 'number' && tosUrls.length > 0) {
-              fetchBackendAnalysis(tabId, domain, tosUrls);
-            } else if (typeof tabId === 'number') {
+          if (hydrated === null) {
+            const canProcess = typeof tabId === 'number' && tosUrls.length > 0;
+            const isProcessing =
+              typeof tabId === 'number' && tabFetchInFlight.has(tabId);
+
+            if (isProcessing || canProcess) {
               // eslint-disable-next-line no-console
-              console.warn(
-                '[privasee] Skipping TOS processing: no valid policy links or fallback URL'
+              console.log(
+                '[privasee] No cached analysis available — using processing insight'
               );
+              sendResult(createProcessingInsight(domain));
+              if (canProcess && !isProcessing && typeof tabId === 'number') {
+                fetchBackendAnalysis(tabId, domain, tosUrls);
+              }
+              return;
             }
+
+            // eslint-disable-next-line no-console
+            console.warn(
+              '[privasee] No cached analysis and no valid policy links; sending unavailable insight'
+            );
+            sendResult(createUnavailableInsight(domain));
+            return;
           }
+
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[privasee] Cached analysis lookup failed; sending unavailable insight'
+          );
+          sendResult(createUnavailableInsight(domain));
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error(
             '[privasee] GET_PRIVACY_INSIGHT handler error:',
             err
           );
-          if (typeof tabId === 'number') {
-            chrome.tabs.sendMessage(tabId, {
-              type: 'GET_PRIVACY_INSIGHT_RESULT',
-              ok: true,
-              data: createFallbackInsight(domain),
-            }).catch(() => undefined);
-          }
+          sendResult(createUnavailableInsight(domain));
         }
       })();
 

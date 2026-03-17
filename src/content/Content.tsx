@@ -33,19 +33,16 @@ type SignupContext = {
   isDialogLike: boolean;
 };
 
+type FetchInsightOptions = {
+  force?: boolean;
+};
+
 const SESSION_DISMISS_KEY_PREFIX = 'privasee:overlay:dismissed:';
 const SESSION_SIGNUP_JOURNEY_KEY_PREFIX = 'privasee:overlay:signup-journey:';
 const SNOOZE_KEY = 'privasee_overlay_snooze_by_domain';
 const SIGNUP_JOURNEY_TTL_MS = 30 * 60 * 1000;
 
 const DOMAIN = window.location.hostname;
-
-/**
- * Debug flag:
- * When true, the signup overlay is allowed to show on every page reload
- * (still only when signup intent is detected on the current page).
- */
-const DEBUG_SHOW_ON_EVERY_SIGNUP_RELOAD = true;
 
 const SIGNUP_KEYWORDS = [
   'agree and join',
@@ -382,6 +379,8 @@ export default function Content(): JSX.Element {
   const currentPathRef = useRef(window.location.pathname);
   const overlayRef = useRef<HTMLElement | null>(null);
   const fetchedForPathRef = useRef<string | null>(null);
+  const visibleRef = useRef(false);
+  const insightRef = useRef<PrivacyInsight | null>(null);
   /** In-memory only: avoid showing overlay again in this page load. Resets on tab close/refresh. */
   const hasShownThisLoadRef = useRef(false);
 
@@ -400,9 +399,9 @@ export default function Content(): JSX.Element {
     );
   }, []);
 
-  const fetchInsight = useCallback(() => {
+  const fetchInsight = useCallback(({ force = false }: FetchInsightOptions = {}) => {
     const currentPath = window.location.pathname;
-    if (fetchedForPathRef.current === currentPath) return;
+    if (!force && fetchedForPathRef.current === currentPath) return;
     fetchedForPathRef.current = currentPath;
 
     setLoading(true);
@@ -484,20 +483,28 @@ export default function Content(): JSX.Element {
     });
   }, []);
 
-  const showOverlay = useCallback(async () => {
-    if (visible) return;
+  const reopenOverlay = useCallback(() => {
+    if (visibleRef.current) return;
 
-    if (!DEBUG_SHOW_ON_EVERY_SIGNUP_RELOAD) {
-      if (hasSessionFlag(dismissSessionKey)) return;
-      if (hasShownThisLoadRef.current) return;
-      if (await isSnoozed(DOMAIN)) return;
+    hasShownThisLoadRef.current = true;
+    setHasIntent(true);
+    setVisible(true);
+    if (!insightRef.current && !loading) {
+      fetchInsight({ force: true });
     }
+  }, [fetchInsight, loading]);
+
+  const showOverlay = useCallback(async () => {
+    if (visibleRef.current) return;
+    if (hasSessionFlag(dismissSessionKey)) return;
+    if (hasShownThisLoadRef.current) return;
+    if (await isSnoozed(DOMAIN)) return;
 
     hasShownThisLoadRef.current = true;
     setVisible(true);
 
     fetchInsight();
-  }, [visible, dismissSessionKey, fetchInsight]);
+  }, [dismissSessionKey, fetchInsight]);
 
   const evaluateIntentAndMaybeShow = useCallback(async () => {
     const context = findSignupContext();
@@ -572,9 +579,7 @@ export default function Content(): JSX.Element {
   }, [showOverlay]);
 
   const dismissForSession = useCallback(() => {
-    if (!DEBUG_SHOW_ON_EVERY_SIGNUP_RELOAD) {
-      setSessionFlag(dismissSessionKey);
-    }
+    setSessionFlag(dismissSessionKey);
     setVisible(false);
   }, [dismissSessionKey]);
 
@@ -600,6 +605,14 @@ export default function Content(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
+
+  useEffect(() => {
+    insightRef.current = insight;
+  }, [insight]);
+
+  useEffect(() => {
     const onFocusIn = () => {
       evaluateIntentAndMaybeShow().catch(() => undefined);
       updatePopoverPosition();
@@ -611,7 +624,7 @@ export default function Content(): JSX.Element {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && visible) {
+      if (event.key === 'Escape' && visibleRef.current) {
         dismissForSession();
       }
     };
@@ -651,7 +664,6 @@ export default function Content(): JSX.Element {
     showOverlay,
     updatePopoverPosition,
     syncBackdropToPopover,
-    visible,
   ]);
 
   useEffect(() => {
@@ -720,15 +732,30 @@ export default function Content(): JSX.Element {
   }, [evaluateIntentAndMaybeShow]);
 
   useEffect(() => {
-    const onMessage = (message: {
-      type?: string;
-      payload?: PrivacyInsight;
-    }) => {
+    const onMessage = (
+      message: {
+        type?: string;
+        payload?: PrivacyInsight;
+      },
+      _sender: chrome.runtime.MessageSender,
+      sendResponse: (response?: { ok: boolean; reopened?: boolean }) => void
+    ) => {
       try {
-        if (message.type !== 'PRIVACY_INSIGHT_UPDATED' || !message.payload) {
-          return;
+        if (message.type === 'REOPEN_OVERLAY') {
+          if (visibleRef.current) {
+            sendResponse({ ok: true, reopened: false });
+            return undefined;
+          }
+
+          reopenOverlay();
+          sendResponse({ ok: true, reopened: true });
+          return undefined;
         }
-        if (message.payload.domain !== DOMAIN) return;
+
+        if (message.type !== 'PRIVACY_INSIGHT_UPDATED' || !message.payload) {
+          return undefined;
+        }
+        if (message.payload.domain !== DOMAIN) return undefined;
         // eslint-disable-next-line no-console
         console.log(
           '[privasee:content] PRIVACY_INSIGHT_UPDATED received, keyConcerns:',
@@ -740,6 +767,7 @@ export default function Content(): JSX.Element {
         // eslint-disable-next-line no-console
         console.warn('[privasee:content] PRIVACY_INSIGHT_UPDATED handler error:', err);
       }
+      return undefined;
     };
 
     chrome.runtime.onMessage.addListener(onMessage);
@@ -750,27 +778,7 @@ export default function Content(): JSX.Element {
         // Extension context may be invalidated
       }
     };
-  }, []);
-
-  // Call tos_processor API directly from content script (host_permissions grants localhost access)
-  useEffect(() => {
-    const TOS_PROCESS_URL = 'http://localhost:8000/api/tos_processor/process';
-    const requestUrl = `${TOS_PROCESS_URL}?url=${encodeURIComponent(`https://${DOMAIN}`)}`;
-    // eslint-disable-next-line no-console
-    console.log('[privasee:content] calling tos_processor directly:', requestUrl);
-    fetch(requestUrl)
-      .then((res) => res.json())
-      .then((data: Record<string, unknown>) => {
-        // eslint-disable-next-line no-console
-        console.log('[privasee:content] backend raw response (untouched):', data);
-        // eslint-disable-next-line no-console
-        console.log('[privasee:content] backend raw response JSON:', JSON.stringify(data, null, 2));
-      })
-      .catch((err) => {
-        // eslint-disable-next-line no-console
-        console.error('[privasee:content] tos_processor fetch failed:', err);
-      });
-  }, []);
+  }, [reopenOverlay]);
 
   if (!hasIntent || !visible) {
     return <div id='my-ext' className='privasee-shell' data-theme='dark' />;
@@ -843,9 +851,6 @@ export default function Content(): JSX.Element {
             <h2 className='privasee-title'>Privacy Risk Snapshot</h2>
             <p className='privasee-domain'>{DOMAIN}</p>
             <p className='privasee-summary'>{summaryText}</p>
-            {loading ? (
-              <p className='privasee-loading'>Refreshing backend analysis...</p>
-            ) : null}
           </div>
         </header>
 
@@ -869,10 +874,11 @@ export default function Content(): JSX.Element {
             <div className='privasee-concern-list'>
               {keyConcerns.map((tile, index) => {
                 const concernToneClass = index < 2 ? 'is-critical' : 'is-medium';
+                const concernKey = `${tile.title}-${tile.details ?? concernToneClass}`;
 
                 return (
                   <article
-                    key={`${tile.title}-${index}`}
+                    key={concernKey}
                     className={`privasee-concern-card ${concernToneClass}`}
                   >
                     <p className='privasee-concern-text'>
