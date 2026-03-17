@@ -37,7 +37,7 @@ A Chrome extension that surfaces **privacy risks at signup**: when you’re on a
 - **Node.js** ≥ 20.x  
 - **pnpm** ≥ 8.15.0 (enforced via `preinstall`)  
 - **Python** 3.11+ (for backend)  
-- **Valkey** or **Redis** (for cache and attribute store)  
+- **Docker** (recommended for the local Valkey container) or a local **Valkey/Redis** install  
 - **Google Gemini API key** (for TOS/privacy extraction)
 
 ---
@@ -96,11 +96,22 @@ cp .env.example .env
 Edit `.env` and set at least:
 
 - `GEMINI_API_KEY` — required for TOS/privacy extraction  
-- `VALKEY_HOST`, `VALKEY_PORT`, `VALKEY_PASSWORD` — if Valkey/Redis is not on `localhost:6379`
+- `VALKEY_HOST`, `VALKEY_PORT`, `VALKEY_PASSWORD` — defaults already match the local Dockerized Valkey on `127.0.0.1:6379`
 
 ### 3. Valkey / Redis
 
-Ensure Valkey (or Redis) is running. The backend uses it for cache (policy analysis), per-site attribute ZSETs, and global severity config. See [How we use Valkey](#how-we-use-valkey) for the full data patterns and flow.
+Start the local Valkey container from the repo root:
+
+```bash
+docker build -f docker/valkey/Dockerfile -t privasee-valkey .
+docker run -d \
+  --name privasee-valkey \
+  -p 127.0.0.1:6379:6379 \
+  -v privasee-valkey-data:/data \
+  privasee-valkey
+```
+
+The backend uses Valkey for cache (policy analysis), per-site attribute ZSETs, and global severity config. See [How we use Valkey](#how-we-use-valkey) for the full data patterns and flow.
 
 ---
 
@@ -188,7 +199,7 @@ So: **HSET** = reference table; **ZSET** = per-site ranking; **SET** = full anal
 
 ### RDB persistence
 
-Our Valkey is configured with save rules in `valkey.conf` (e.g. `save 3600 1`, `save 300 100`, `save 60 10000`), it periodically forks and writes the **entire dataset** to a `dump.rdb` file on disk. On restart, it loads `dump.rdb` back into memory—so the severity map, all cached analyses, and all per-domain ZSETs survive a restart. RDB is **all-or-nothing**: every key in memory is included in the snapshot; there is no way to persist only certain keys.
+Our local Valkey container is configured with save rules in `docker/valkey/valkey.conf` (e.g. `save 3600 1`, `save 300 100`, `save 60 10000`), so it periodically forks and writes the **entire dataset** to a `dump.rdb` file on disk. On restart, it loads `dump.rdb` back into memory—so the severity map, all cached analyses, and all per-domain ZSETs survive a restart. RDB is **all-or-nothing**: every key in memory is included in the snapshot; there is no way to persist only certain keys.
 
 This matters because the permanent data (HSET, ZSET, SET caches) is expensive to rebuild (Gemini API calls). RDB ensures a Valkey restart doesn’t wipe them. Sessions, which are short-lived with TTL, would expire anyway; they are just included in the snapshot. If RDB were disabled (`save ""`), the app would still run (Python falls back to `DEFAULT_ATTRIBUTE_SEVERITY`), but every domain would need to be re-processed from scratch after a restart.
 

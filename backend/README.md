@@ -34,11 +34,36 @@ playwright install chromium   # headless browser for JS-rendered pages
 cp .env.example .env       # optional: edit .env
 ```
 
+Set `GEMINI_API_KEY` in `backend/.env`. The Valkey defaults in `.env.example` already point to a local Docker container on `127.0.0.1:6379`.
+
+## Local Valkey Container
+
+Build and run Valkey from the repo root:
+
+```bash
+docker build -f docker/valkey/Dockerfile -t privasee-valkey .
+docker run -d \
+  --name privasee-valkey \
+  -p 127.0.0.1:6379:6379 \
+  -v privasee-valkey-data:/data \
+  privasee-valkey
+```
+
+Useful follow-up commands:
+
+```bash
+docker logs -f privasee-valkey
+docker start privasee-valkey
+docker stop privasee-valkey
+```
+
 ## Run
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+Before starting the API, make sure the `privasee-valkey` container is running. The Docker command above binds Valkey to `127.0.0.1` only, so it stays local to your machine while remaining reachable by the backend.
 
 - API root: http://localhost:8000/api/
 - Health: http://localhost:8000/api/health
