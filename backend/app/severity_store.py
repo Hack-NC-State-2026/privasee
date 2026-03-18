@@ -114,11 +114,6 @@ def set_attribute_severity_map(mapping: dict[str, SeverityEntry]) -> None:
             payload[attr] = json.dumps({"color": "green", "sensitivity_level": 1})
     client.hset(SEVERITY_KEY, mapping=payload)
 
-
-# ---------------------------------------------------------------------------
-# Per-site attribute ZSET helpers
-# ---------------------------------------------------------------------------
-
 def _site_key(domain: str) -> str:
     return f"{SITE_ATTRS_PREFIX}{domain}"
 
@@ -180,11 +175,6 @@ def get_site_attributes(domain: str) -> list[dict[str, Any]]:
             "sensitivity_level": int(score),
         })
     return result
-
-
-# ---------------------------------------------------------------------------
-# Extract attribute names from a data_collection dict
-# ---------------------------------------------------------------------------
 
 def collect_attributes_from_data_collection(data_collection: dict[str, Any]) -> list[str]:
     """

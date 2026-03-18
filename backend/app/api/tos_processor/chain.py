@@ -75,8 +75,6 @@ def _extract_terms_and_privacy_risks(policy_texts: list[str]) -> dict:
 
     raise RuntimeError("LLM failed to return structured output after %d attempts" % MAX_RETRIES)
 
-
-# LangChain-compatible tool: use with bind_tools([...]) or agent
 extract_terms_and_privacy_risks_tool = StructuredTool.from_function(
     name="extract_terms_and_privacy_risks",
     description=(

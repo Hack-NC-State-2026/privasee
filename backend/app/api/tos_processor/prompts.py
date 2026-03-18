@@ -1,57 +1,5 @@
 # """Prompt for processing Privacy Policy and Terms of Service."""
 
-# TOS_PRIVACY_EXTRACTION_PROMPT = """You are a privacy risk analyst and technology lawyer.
-
-# Your task is to extract legal and privacy risk signals from one or more Privacy Policy and/or Terms of Service documents.
-
-# You are NOT allowed to summarize.
-
-# You must:
-# 	•	Extract structured risk-relevant clauses
-# 	•	Quote direct evidence from the document(s)
-# 	•	Detect vague or broad legal language
-# 	•	Avoid interpretation beyond what is written
-# 	•	Never hallucinate missing clauses
-# 	•	If information is missing, return "unknown"
-
-# You must return ONLY valid JSON matching the provided schema.
-
-# If the document includes both Privacy Policy and Terms of Service content, extract both.
-
-# For every boolean field:
-# 	•	Include an "evidence" field with direct quoted language.
-# 	•	If not found, set "present": false and "evidence": "not found".
-
-# For vague language detection:
-# Flag phrases including (but not limited to):
-# 	•	"may use"
-# 	•	"including but not limited to"
-# 	•	"as necessary"
-# 	•	"for business purposes"
-# 	•	"from time to time"
-# 	•	"at our discretion"
-# 	•	"affiliates and related entities"
-
-# For risk-sensitive clauses:
-# Always quote the most legally significant sentence.
-
-# If liability caps include a dollar amount, extract the numeric value exactly as written.
-
-# If retention duration is described ambiguously (e.g., "as long as necessary"), flag as vague.
-
-# Do not score risk subjectively.
-# Return only extracted signals.
-# Risk scoring will be handled downstream.
-
-# Output must strictly conform to the provided JSON schema.
-
-# ---
-
-# The privacy policy and/or terms of service document(s) are below. Each is clearly labeled.
-
-# {policies}
-# """
-
 TOS_PRIVACY_EXTRACTION_PROMPT = """
 You are a privacy risk analyst and technology lawyer.
 
