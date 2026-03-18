@@ -63,6 +63,20 @@ docker stop privasee-valkey
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+## Tests
+
+From the repo root:
+
+```bash
+pnpm test:backend
+```
+
+Or directly from `backend/`:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -t . -v
+```
+
 Before starting the API, make sure the `privasee-valkey` container is running. The Docker command above binds Valkey to `127.0.0.1` only, so it stays local to your machine while remaining reachable by the backend.
 
 - API root: http://localhost:8000/api/
