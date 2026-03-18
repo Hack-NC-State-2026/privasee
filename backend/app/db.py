@@ -34,10 +34,6 @@ def get_client() -> Redis:
         raise RuntimeError("Valkey not connected; call db.connect() first.")
     return _client
 
-
-# --- Session helpers (key-value with optional TTL) ---
-
-
 def _session_key(key: str) -> str:
     return f"{_SESSION_PREFIX}{key}"
 
