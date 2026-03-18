@@ -725,7 +725,6 @@ export default function Content(): JSX.Element {
     overlayState?.status === 'processing'
       ? overlayState.message
       : OVERLAY_PROCESSING_MESSAGE;
-  const summaryText = readyInsight?.summary?.trim() ?? '';
   const sharedDataItems = readyInsight?.likelyDataCollected.slice(0, 3) ?? [];
   const keyConcerns = readyInsight?.keyConcerns.slice(0, 3) ?? [];
   const actionItems = readyInsight?.recommendations.slice(0, 2) ?? [];
@@ -739,8 +738,6 @@ export default function Content(): JSX.Element {
         <span className='privasee-skeleton privasee-skeleton-line privasee-summary-line privasee-summary-line-short' />
       </div>
     );
-  } else if (summaryText) {
-    summaryContent = <p className='privasee-summary'>{summaryText}</p>;
   }
 
   return (

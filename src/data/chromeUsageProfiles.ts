@@ -13,7 +13,6 @@ const ATTRIBUTE_SEVERITY_URL = `${BACKEND_ORIGIN}/api/attribute_severity/`;
 
 const HISTORY_LOOKBACK_DAYS = 365;
 const HISTORY_MAX_RESULTS = 5000;
-const MAX_PROFILE_COUNT = 24;
 
 const MULTI_PART_TLDS = new Set([
   'co.uk',
@@ -581,8 +580,7 @@ const aggregateHistory = (items: chrome.history.HistoryItem[]): DomainAggregate[
         Math.max(0, 35 - rightAgeDays);
 
       return rightRank - leftRank;
-    })
-    .slice(0, MAX_PROFILE_COUNT);
+    });
 };
 
 const fetchCachedAnalyses = async (
